@@ -1,0 +1,14 @@
+[package]
+name = "iterframes"
+version = "0.1.0"
+authors = ["Alessio Sanfratello <sanfra90@gmail.com>"]
+edition = "2018"
+description = "Iterate on video frames quickly"
+readme = "Readme.md"
+
+[dependencies]
+pyo3 = { version = "0.12.4", features = ["extension-module"] }
+
+[lib]
+name = "iterframes"
+crate-type = ["cdylib"]
