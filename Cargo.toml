@@ -7,8 +7,14 @@ description = "Iterate on video frames quickly"
 readme = "Readme.md"
 
 [dependencies]
-pyo3 = { version = "0.12.4", features = ["extension-module"] }
+pyo3 = { version = "0.13.0", features = ["extension-module"] }
+ffmpeg-next = "4.3.8"
+ndarray = "0.14.0"
+numpy = "0.13"
 
 [lib]
 name = "iterframes"
 crate-type = ["cdylib"]
+
+[package.metadata.maturin]
+requires-dist = ["numpy>=1.16.0"]

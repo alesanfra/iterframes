@@ -1,5 +1,11 @@
-from iterframes import read_video
+from iterframes import read
 
 
-def test_integration():
-    assert 5 == len(list(read_video(5)))
+def test_integration(data_path):
+    path = str(data_path / "video_480x270.mp4")
+    print(path)
+    it = read(path)
+
+    a = it.__next__()
+
+    assert a.shape == (3, 480, 270)
