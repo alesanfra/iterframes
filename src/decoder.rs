@@ -57,6 +57,7 @@ fn decode_video(
         )?;
 
         let mut frame_index = 0;
+        let shape: (usize, usize, usize) = (3, decoder.width() as usize, decoder.height() as usize);
 
         let mut receive_and_process_decoded_frames =
             |decoder: &mut ffmpeg::decoder::Video| -> Result<(), Box<dyn std::error::Error>> {
@@ -65,7 +66,7 @@ fn decode_video(
                     let mut rgb_frame = Video::empty();
                     scaler.run(&decoded, &mut rgb_frame)?;
 
-                    let tensor = Array::from_shape_vec((3, 480, 270), rgb_frame.data(0).to_vec())
+                    let tensor = Array::from_shape_vec(shape, rgb_frame.data(0).to_vec())
                         .unwrap()
                         .into();
 
