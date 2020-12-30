@@ -10,25 +10,31 @@ use ffmpeg::software::scaling::{context::Context, flag::Flags};
 use ffmpeg::util::frame::video::Video;
 use ndarray::{Array, Array3};
 
-static PREFETCH_FRAMES: usize = 1;
-
-pub fn start(path: String) -> Receiver<Option<Array3<u8>>> {
+pub fn start(path: String, prefetch_frames: Option<usize>) -> Receiver<Option<Array3<u8>>> {
     // Create channels
-    let (tx, rx) = mpsc::sync_channel(PREFETCH_FRAMES);
+    let bound = prefetch_frames.unwrap_or(1);
+    let (tx, rx) = mpsc::sync_channel(bound);
 
     // Start decoder thread
     thread::spawn(move || {
-        decode_video(&path, &tx);
-
-        // Send None to stop iteration
-        tx.send(None).unwrap();
-        println!("thread finished");
+        match decode_video(&path, &tx) {
+            Ok(_) => tx.send(None).unwrap(),
+            Err(e) => {
+                if let Some(err) = e.downcast_ref::<ffmpeg::Error>() {
+                    eprintln!("Decoding Error: {}", err);
+                    tx.send(None).unwrap();
+                }
+            }
+        };
     });
 
     rx
 }
 
-fn decode_video(path: &String, tx: &SyncSender<Option<Array3<u8>>>) -> Result<(), ffmpeg::Error> {
+fn decode_video(
+    path: &String,
+    tx: &SyncSender<Option<Array3<u8>>>,
+) -> Result<(), Box<dyn std::error::Error>> {
     ffmpeg::init().unwrap();
 
     if let Ok(mut ictx) = input(path) {
@@ -53,7 +59,7 @@ fn decode_video(path: &String, tx: &SyncSender<Option<Array3<u8>>>) -> Result<()
         let mut frame_index = 0;
 
         let mut receive_and_process_decoded_frames =
-            |decoder: &mut ffmpeg::decoder::Video| -> Result<(), ffmpeg::Error> {
+            |decoder: &mut ffmpeg::decoder::Video| -> Result<(), Box<dyn std::error::Error>> {
                 let mut decoded = Video::empty();
                 while decoder.receive_frame(&mut decoded).is_ok() {
                     let mut rgb_frame = Video::empty();
@@ -63,7 +69,7 @@ fn decode_video(path: &String, tx: &SyncSender<Option<Array3<u8>>>) -> Result<()
                         .unwrap()
                         .into();
 
-                    tx.send(Some(tensor)).unwrap();
+                    tx.send(Some(tensor))?;
                     frame_index += 1;
                 }
                 Ok(())
