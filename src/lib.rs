@@ -38,6 +38,7 @@ fn read(path: String, prefetch_frames: Option<usize>) -> PyResult<FrameIterator>
 /// Process quickly all videos in the world, one frame at time.
 #[pymodule]
 fn iterframes(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_function(wrap_pyfunction!(read, m)?)?;
     Ok(())
 }
