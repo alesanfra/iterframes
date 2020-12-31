@@ -8,7 +8,7 @@ use pyo3::{wrap_pyfunction, PyIterProtocol};
 
 mod decoder;
 
-#[pyclass(module="iterframes")]
+#[pyclass(module = "iterframes")]
 pub struct FrameIterator {
     channel: Receiver<Option<Array3<u8>>>,
 }
@@ -28,6 +28,9 @@ impl PyIterProtocol for FrameIterator {
 }
 
 /// Iterates over a video
+///
+/// Returns:
+///     Frame with shape HxWx3.
 #[pyfunction]
 fn read(path: String, prefetch_frames: Option<usize>) -> PyResult<FrameIterator> {
     let channel = decoder::start(path, prefetch_frames);
