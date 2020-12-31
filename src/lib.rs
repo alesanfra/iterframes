@@ -1,7 +1,9 @@
+extern crate ffmpeg_next as ffmpeg;
+
 use std::sync::mpsc::Receiver;
 
-use ndarray::Array3;
-use numpy::{IntoPyArray, PyArray3};
+use ffmpeg::frame::Video;
+use numpy::{PyArray, PyArray3};
 use pyo3::class::iter::IterNextOutput;
 use pyo3::prelude::*;
 use pyo3::{wrap_pyfunction, PyIterProtocol};
@@ -10,7 +12,7 @@ mod decoder;
 
 #[pyclass(module = "iterframes")]
 pub struct FrameIterator {
-    channel: Receiver<Option<Array3<u8>>>,
+    channel: Receiver<Option<Video>>,
 }
 
 #[pyproto]
@@ -21,7 +23,13 @@ impl PyIterProtocol for FrameIterator {
 
     fn __next__(py_self: PyRefMut<Self>) -> IterNextOutput<Py<PyArray3<u8>>, String> {
         match py_self.channel.recv() {
-            Ok(Some(tensor)) => IterNextOutput::Yield(tensor.into_pyarray(py_self.py()).to_owned()),
+            Ok(Some(frame)) => {
+                let tensor = PyArray::from_slice(py_self.py(), frame.data(0))
+                    .reshape((frame.height() as usize, frame.width() as usize, 3))
+                    .unwrap()
+                    .into();
+                IterNextOutput::Yield(tensor)
+            }
             _ => IterNextOutput::Return(String::from("Ended")),
         }
     }

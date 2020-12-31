@@ -10,7 +10,7 @@ IterFrames is a simple Python video decoder implemented in Rust.
 import iterframes
 
 for frame in iterframes.read("video.mp4"):
-    # frame is a numpy array
+    # frame is a numpy array with shape (height, width, 3)
     pass
 ```
 

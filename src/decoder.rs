@@ -8,9 +8,8 @@ use ffmpeg::format::{input, Pixel};
 use ffmpeg::media::Type;
 use ffmpeg::software::scaling::{context::Context, flag::Flags};
 use ffmpeg::util::frame::video::Video;
-use ndarray::{Array, Array3};
 
-pub fn start(path: String, prefetch_frames: Option<usize>) -> Receiver<Option<Array3<u8>>> {
+pub fn start(path: String, prefetch_frames: Option<usize>) -> Receiver<Option<Video>> {
     // Create channels
     let bound = prefetch_frames.unwrap_or(1);
     let (tx, rx) = mpsc::sync_channel(bound);
@@ -33,7 +32,7 @@ pub fn start(path: String, prefetch_frames: Option<usize>) -> Receiver<Option<Ar
 
 fn decode_video(
     path: &String,
-    tx: &SyncSender<Option<Array3<u8>>>,
+    tx: &SyncSender<Option<Video>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     ffmpeg::init().unwrap();
 
@@ -57,7 +56,6 @@ fn decode_video(
         )?;
 
         let mut frame_index = 0;
-        let shape: (usize, usize, usize) = (decoder.height() as usize, decoder.width() as usize, 3);
 
         let mut receive_and_process_decoded_frames =
             |decoder: &mut ffmpeg::decoder::Video| -> Result<(), Box<dyn std::error::Error>> {
@@ -65,12 +63,7 @@ fn decode_video(
                 while decoder.receive_frame(&mut decoded).is_ok() {
                     let mut rgb_frame = Video::empty();
                     scaler.run(&decoded, &mut rgb_frame)?;
-
-                    let tensor = Array::from_shape_vec(shape, rgb_frame.data(0).to_vec())
-                        .unwrap()
-                        .into();
-
-                    tx.send(Some(tensor))?;
+                    tx.send(Some(rgb_frame))?;
                     frame_index += 1;
                 }
                 Ok(())

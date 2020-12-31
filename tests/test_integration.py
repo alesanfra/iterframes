@@ -26,7 +26,7 @@ def test_same_behavior_as_decord(video_path):
     np.testing.assert_equal(frame, decord_frame)
 
 
-def _test_whole_video(video_path):
+def test_whole_video(video_path):
     from decord import VideoReader
 
     vr = VideoReader(video_path)
@@ -35,7 +35,7 @@ def _test_whole_video(video_path):
         np.testing.assert_equal(frame, frame_decord)
 
 
-def test_benchmark(video_path):
+def _test_benchmark(video_path):
     from decord import VideoReader
     vr = VideoReader(video_path)
 
