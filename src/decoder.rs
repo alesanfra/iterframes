@@ -57,7 +57,7 @@ fn decode_video(
         )?;
 
         let mut frame_index = 0;
-        let shape: (usize, usize, usize) = (3, decoder.width() as usize, decoder.height() as usize);
+        let shape: (usize, usize, usize) = (decoder.height() as usize, decoder.width() as usize, 3);
 
         let mut receive_and_process_decoded_frames =
             |decoder: &mut ffmpeg::decoder::Video| -> Result<(), Box<dyn std::error::Error>> {

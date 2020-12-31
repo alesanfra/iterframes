@@ -8,7 +8,7 @@ use pyo3::{wrap_pyfunction, PyIterProtocol};
 
 mod decoder;
 
-#[pyclass]
+#[pyclass(module="iterframes")]
 pub struct FrameIterator {
     channel: Receiver<Option<Array3<u8>>>,
 }
@@ -37,8 +37,9 @@ fn read(path: String, prefetch_frames: Option<usize>) -> PyResult<FrameIterator>
 
 /// Process quickly all videos in the world, one frame at time.
 #[pymodule]
-fn iterframes(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
-    m.add_function(wrap_pyfunction!(read, m)?)?;
+fn iterframes(_py: Python, module: &PyModule) -> PyResult<()> {
+    module.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    module.add_function(wrap_pyfunction!(read, module)?)?;
+    module.add_class::<FrameIterator>()?;
     Ok(())
 }
