@@ -18,5 +18,14 @@ name = "iterframes"
 crate-type = ["cdylib"]
 
 [package.metadata.maturin]
-requires-dist = ["numpy>=1.16.0"]
 requires-python = ">=3.6"
+requires-dist = [
+    "numpy>=1.16.0",
+]
+classifier = [
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Rust",
+    "Topic :: Multimedia :: Video",
+]
