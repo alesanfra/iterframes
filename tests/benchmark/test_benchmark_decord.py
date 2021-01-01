@@ -1,19 +1,8 @@
 import timeit
 
 import numpy as np
-import pytest
+
 from iterframes import read
-
-
-@pytest.fixture
-def video_path(data_path):
-    return str(data_path / "video_480x270.mp4")
-
-
-def test_integration(video_path):
-    it = read(video_path)
-    a = it.__next__()
-    assert a.shape == (270, 480, 3)
 
 
 def test_same_behavior_as_decord(video_path):
