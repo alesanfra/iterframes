@@ -1,10 +1,7 @@
-extern crate ffmpeg_next as ffmpeg;
-
 use std::sync::mpsc::Receiver;
 
 use ffmpeg::frame::Video;
 use numpy::{PyArray, PyArray3};
-use pyo3::class::iter::IterNextOutput;
 use pyo3::prelude::*;
 use pyo3::{wrap_pyfunction, PyIterProtocol};
 
@@ -17,20 +14,19 @@ pub struct FrameIterator {
 
 #[pyproto]
 impl PyIterProtocol for FrameIterator {
-    fn __iter__(py_self: PyRef<Self>) -> PyRef<Self> {
-        py_self
+    fn __iter__(slf: PyRef<Self>) -> PyRef<Self> {
+        slf
     }
 
-    fn __next__(py_self: PyRefMut<Self>) -> IterNextOutput<Py<PyArray3<u8>>, String> {
-        match py_self.channel.recv() {
-            Ok(Some(frame)) => {
-                let tensor = PyArray::from_slice(py_self.py(), frame.data(0))
-                    .reshape((frame.height() as usize, frame.width() as usize, 3))
-                    .unwrap()
-                    .into();
-                IterNextOutput::Yield(tensor)
-            }
-            _ => IterNextOutput::Return(String::from("Ended")),
+    fn __next__(slf: PyRefMut<Self>) -> Option<Py<PyArray3<u8>>> {
+        if let Ok(Some(frame)) = slf.channel.recv() {
+            let tensor = PyArray::from_slice(slf.py(), frame.data(0))
+                .reshape((frame.height() as usize, frame.width() as usize, 3))
+                .unwrap()
+                .into();
+            Some(tensor)
+        } else {
+            None
         }
     }
 }
@@ -40,8 +36,13 @@ impl PyIterProtocol for FrameIterator {
 /// Returns:
 ///     Frame with shape HxWx3.
 #[pyfunction]
-fn read(path: String, prefetch_frames: Option<usize>) -> PyResult<FrameIterator> {
-    let channel = decoder::start(path, prefetch_frames);
+fn read(
+    path: String,
+    height: Option<u32>,
+    width: Option<u32>,
+    prefetch_frames: Option<usize>,
+) -> PyResult<FrameIterator> {
+    let channel = decoder::start(path, height, width, prefetch_frames);
     let iterator = FrameIterator { channel };
     Ok(iterator)
 }

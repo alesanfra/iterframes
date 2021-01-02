@@ -1,5 +1,3 @@
-extern crate ffmpeg_next as ffmpeg;
-
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, SyncSender};
 use std::thread;
@@ -9,18 +7,22 @@ use ffmpeg::media::Type;
 use ffmpeg::software::scaling::{context::Context, flag::Flags};
 use ffmpeg::util::frame::video::Video;
 
-pub fn start(path: String, prefetch_frames: Option<usize>) -> Receiver<Option<Video>> {
+pub fn start(
+    path: String,
+    height: Option<u32>,
+    width: Option<u32>,
+    prefetch_frames: Option<usize>,
+) -> Receiver<Option<Video>> {
     // Create channels
     let bound = prefetch_frames.unwrap_or(1);
     let (tx, rx) = mpsc::sync_channel(bound);
 
     // Start decoder thread
     thread::spawn(move || {
-        match decode_video(&path, &tx) {
+        match decode_video(&path, &tx, height, width) {
             Ok(_) => tx.send(None).unwrap(),
             Err(e) => {
-                if let Some(err) = e.downcast_ref::<ffmpeg::Error>() {
-                    eprintln!("Decoding Error: {}", err);
+                if let Some(_) = e.downcast_ref::<ffmpeg::Error>() {
                     tx.send(None).unwrap();
                 }
             }
@@ -33,6 +35,8 @@ pub fn start(path: String, prefetch_frames: Option<usize>) -> Receiver<Option<Vi
 fn decode_video(
     path: &String,
     tx: &SyncSender<Option<Video>>,
+    height: Option<u32>,
+    width: Option<u32>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     ffmpeg::init().unwrap();
 
@@ -50,8 +54,8 @@ fn decode_video(
             decoder.width(),
             decoder.height(),
             Pixel::RGB24,
-            decoder.width(),
-            decoder.height(),
+            width.unwrap_or(decoder.width()),
+            height.unwrap_or(decoder.height()),
             Flags::BILINEAR,
         )?;
 

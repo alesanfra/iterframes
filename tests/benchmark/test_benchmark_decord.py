@@ -15,6 +15,18 @@ def test_same_behavior_as_decord(video_path):
     np.testing.assert_equal(frame, decord_frame)
 
 
+def test_same_behavior_as_decord_with_resize(video_path):
+    from decord import VideoReader
+
+    height, width = 540, 960
+
+    frame = read(video_path, height=height, width=width).__next__()
+    decord_frame = VideoReader(video_path, width=width, height=height).next().asnumpy()
+
+    assert frame.shape == decord_frame.shape
+    np.testing.assert_equal(frame, decord_frame)
+
+
 def test_whole_video(video_path):
     from decord import VideoReader
 

@@ -5,12 +5,11 @@ authors = ["Alessio Sanfratello"]
 edition = "2018"
 description = "Iterate on video frames quickly"
 readme = "Readme.md"
-repository = "https://github.com/alesanfra/iterframes"
 
 [dependencies]
 pyo3 = { version = "0.13.0", features = ["extension-module"] }
-ffmpeg-next = "4.3.8"
-ndarray = "0.14.0"
+ffmpeg = { package = "ffmpeg-next", version = "4.3" }
+ndarray = "0.14"
 numpy = "0.13"
 
 [lib]
@@ -21,6 +20,9 @@ crate-type = ["cdylib"]
 requires-python = ">=3.6"
 requires-dist = [
     "numpy>=1.16.0",
+]
+project-url = [
+    "https://github.com/alesanfra/iterframes",
 ]
 classifier = [
     "Intended Audience :: Science/Research",
