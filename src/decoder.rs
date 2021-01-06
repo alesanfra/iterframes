@@ -61,27 +61,31 @@ fn decode_video(
 
         let mut frame_index = 0;
 
-        let mut receive_and_process_decoded_frames =
-            |decoder: &mut ffmpeg::decoder::Video| -> Result<(), Box<dyn std::error::Error>> {
-                let mut decoded = Video::empty();
-                while decoder.receive_frame(&mut decoded).is_ok() {
-                    let mut rgb_frame = Video::empty();
-                    scaler.run(&decoded, &mut rgb_frame)?;
-                    tx.send(Some(rgb_frame))?;
-                    frame_index += 1;
-                }
-                Ok(())
-            };
-
         for (stream, packet) in ictx.packets() {
             if stream.index() == video_stream_index {
                 decoder.send_packet(&packet)?;
-                receive_and_process_decoded_frames(&mut decoder)?;
+                process_frames(&mut frame_index, &mut decoder, &mut scaler, tx)?;
             }
         }
         decoder.send_eof()?;
-        receive_and_process_decoded_frames(&mut decoder)?;
+        process_frames(&mut frame_index, &mut decoder, &mut scaler, tx)?;
     }
 
+    Ok(())
+}
+
+fn process_frames(
+    frame_index: &mut i32,
+    decoder: &mut ffmpeg::decoder::Video,
+    scaler: &mut Context,
+    tx: &SyncSender<Option<Video>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut decoded = Video::empty();
+    while decoder.receive_frame(&mut decoded).is_ok() {
+        let mut rgb_frame = Video::empty();
+        scaler.run(&decoded, &mut rgb_frame)?;
+        tx.send(Some(rgb_frame))?;
+        *frame_index += 1;
+    }
     Ok(())
 }

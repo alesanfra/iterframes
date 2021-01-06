@@ -7,7 +7,7 @@ description = "Iterate on video frames quickly"
 readme = "Readme.md"
 
 [dependencies]
-pyo3 = { version = "0.13.0", features = ["extension-module"] }
+pyo3 = { version = "0.13", features = ["extension-module"] }
 ffmpeg = { package = "ffmpeg-next", version = "4.3" }
 ndarray = "0.14"
 numpy = "0.13"
@@ -21,9 +21,7 @@ requires-python = ">=3.6"
 requires-dist = [
     "numpy>=1.16.0",
 ]
-project-url = [
-    "https://github.com/alesanfra/iterframes",
-]
+# project-url = ["https://github.com/alesanfra/iterframes"]
 classifier = [
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",

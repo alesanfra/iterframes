@@ -41,10 +41,10 @@ fn read(
     height: Option<u32>,
     width: Option<u32>,
     prefetch_frames: Option<usize>,
-) -> PyResult<FrameIterator> {
-    let channel = decoder::start(path, height, width, prefetch_frames);
-    let iterator = FrameIterator { channel };
-    Ok(iterator)
+) -> FrameIterator {
+    FrameIterator {
+        channel: decoder::start(path, height, width, prefetch_frames),
+    }
 }
 
 /// Process quickly all videos in the world, one frame at time.
