@@ -1,5 +1,5 @@
 auditwheel==3.3.1
 delocate==0.8.2
-maturin==0.9.0-alpha.16
+maturin==0.9.1
 pre-commit==2.9.3
 pytest==6.2.1
