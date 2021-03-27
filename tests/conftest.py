@@ -10,4 +10,5 @@ def data_path():
 
 @pytest.fixture
 def video_path(data_path):
-    return str(data_path / "video_480x270.mp4")
+    #return str(data_path / "video_480x270.mp4")
+    return str(data_path / "ocean.mov")

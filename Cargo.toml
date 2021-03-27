@@ -7,7 +7,7 @@ description = "Iterate on video frames quickly"
 readme = "Readme.md"
 
 [dependencies]
-pyo3 = { version = "0.13", features = ["extension-module"] }
+pyo3 = { version = "0.13.2", features = ["extension-module", "abi3-py36"] }
 ffmpeg = { package = "ffmpeg-next", version = "4.3" }
 ndarray = "0.14"
 numpy = "0.13"
