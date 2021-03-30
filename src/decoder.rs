@@ -22,7 +22,7 @@ pub fn start(
         match decode_video(&path, &tx, height, width) {
             Ok(_) => tx.send(None).unwrap(),
             Err(e) => {
-                if let Some(_) = e.downcast_ref::<ffmpeg::Error>() {
+                if e.downcast_ref::<ffmpeg::Error>().is_some() {
                     tx.send(None).unwrap();
                 }
             }
@@ -54,8 +54,8 @@ fn decode_video(
             decoder.width(),
             decoder.height(),
             Pixel::RGB24,
-            width.unwrap_or(decoder.width()),
-            height.unwrap_or(decoder.height()),
+            width.unwrap_or_else(|| decoder.width()),
+            height.unwrap_or_else(|| decoder.height()),
             Flags::BILINEAR,
         )?;
 
