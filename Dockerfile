@@ -1,4 +1,4 @@
-FROM konstin2/maturin:0.9.1
+FROM konstin2/maturin:0.10.4
 
 # build tools
 RUN echo "[1] Install dependencies"
