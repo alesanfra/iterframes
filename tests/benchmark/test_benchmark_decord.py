@@ -1,6 +1,7 @@
 import timeit
 
 import numpy as np
+import pytest
 
 from iterframes import read
 
@@ -15,12 +16,12 @@ def test_same_behavior_as_decord(video_path):
     np.testing.assert_equal(frame, decord_frame)
 
 
-def test_same_behavior_as_decord_with_resize(video_path):
+@pytest.mark.parametrize("height, width", [(540, 960), (135, 240)])
+def test_same_behavior_as_decord_with_resize(video_path, height, width):
     from decord import VideoReader
 
-    height, width = 540, 960
-
     frame = read(video_path, height=height, width=width).__next__()
+
     decord_frame = VideoReader(video_path, width=width, height=height).next().asnumpy()
 
     assert frame.shape == decord_frame.shape
@@ -38,6 +39,7 @@ def test_whole_video(video_path):
 
 def _test_benchmark(video_path):
     from decord import VideoReader
+
     vr = VideoReader(video_path)
 
     def read_with_iterframes():

@@ -21,7 +21,7 @@ impl PyIterProtocol for FrameIterator {
     fn __next__(slf: PyRefMut<Self>) -> Option<Py<PyArray3<u8>>> {
         if let Ok(Some(frame)) = slf.channel.recv() {
             let tensor = PyArray::from_slice(slf.py(), frame.data(0))
-                .reshape((frame.height() as usize, frame.width() as usize, 3))
+                .reshape((frame.height() as usize, frame.stride(0) / 3 as usize, 3))
                 .unwrap()
                 .into();
             Some(tensor)
