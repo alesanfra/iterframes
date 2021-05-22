@@ -32,18 +32,18 @@ def test_whole_video(video_path):
     from decord import VideoReader
 
     vr = VideoReader(video_path)
-    for frame in read(video_path):
+    for frame in read(video_path, height=270, width=480):
         frame_decord = vr.next().asnumpy()
         np.testing.assert_equal(frame, frame_decord)
 
 
-def _test_benchmark(video_path):
+def test_benchmark(video_path):
     from decord import VideoReader
 
     vr = VideoReader(video_path)
 
     def read_with_iterframes():
-        for frame in read(video_path, prefetch_frames=1):
+        for frame in read(video_path, height=270, width=480, prefetch_frames=1):
             pass
 
     def read_with_decord():

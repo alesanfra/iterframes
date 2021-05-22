@@ -3,47 +3,42 @@ use std::sync::mpsc::Receiver;
 use ffmpeg::frame::Video;
 use numpy::{PyArray, PyArray3};
 use pyo3::prelude::*;
-use pyo3::{wrap_pyfunction, PyIterProtocol};
 
 mod decoder;
 
 #[pyclass(module = "iterframes")]
-pub struct FrameIterator {
+pub struct FrameReader {
     channel: Receiver<Option<Video>>,
 }
 
-#[pyproto]
-impl PyIterProtocol for FrameIterator {
-    fn __iter__(slf: PyRef<Self>) -> PyRef<Self> {
-        slf
-    }
-
-    fn __next__(slf: PyRefMut<Self>) -> Option<Py<PyArray3<u8>>> {
-        if let Ok(Some(frame)) = slf.channel.recv() {
-            let tensor = PyArray::from_slice(slf.py(), frame.data(0))
-                .reshape((frame.height() as usize, frame.stride(0) / 3 as usize, 3))
-                .unwrap()
-                .into();
-            Some(tensor)
-        } else {
-            None
+#[pymethods]
+impl FrameReader {
+    #[new]
+    fn new(
+        path: String,
+        height: Option<u32>,
+        width: Option<u32>,
+        prefetch_frames: Option<usize>,
+    ) -> Self {
+        Self {
+            channel: decoder::start(path, height, width, prefetch_frames),
         }
     }
-}
 
-/// Iterates over a video
-///
-/// Returns:
-///     Frame with shape HxWx3.
-#[pyfunction]
-fn read(
-    path: String,
-    height: Option<u32>,
-    width: Option<u32>,
-    prefetch_frames: Option<usize>,
-) -> FrameIterator {
-    FrameIterator {
-        channel: decoder::start(path, height, width, prefetch_frames),
+    fn next(self_: PyRefMut<Self>) -> PyResult<Option<(Py<PyArray3<u8>>, usize, usize, usize)>> {
+        if let Ok(Some(frame)) = self_.channel.recv() {
+            let height = frame.height() as usize;
+            let width = frame.width() as usize;
+            let stride = frame.stride(0) as usize;
+
+            let tensor = PyArray::from_slice(self_.py(), frame.data(0))
+                .reshape((height, stride / 3, 3))
+                .unwrap()
+                .into();
+            Ok(Some((tensor, height, width, stride)))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -51,7 +46,6 @@ fn read(
 #[pymodule]
 fn iterframes(_py: Python, module: &PyModule) -> PyResult<()> {
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
-    module.add_function(wrap_pyfunction!(read, module)?)?;
-    module.add_class::<FrameIterator>()?;
+    module.add_class::<FrameReader>()?;
     Ok(())
 }
