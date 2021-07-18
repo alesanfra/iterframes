@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -x
+set -e
 
 echo "Build wheel"
 maturin build --strip --release

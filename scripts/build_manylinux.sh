@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -x
+set -e
 
 DOCKER_IMAGE="iterframes_manylinux_2010"
 

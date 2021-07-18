@@ -9,8 +9,7 @@ readme = "Readme.md"
 [dependencies]
 pyo3 = { version = "*", features = ["extension-module", "abi3-py36"] }
 ffmpeg = { package = "ffmpeg-next", version = "*" }
-ndarray = "*"
-numpy = "*"
+crossbeam = "*"
 
 [lib]
 name = "iterframes"

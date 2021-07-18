@@ -9,7 +9,7 @@ from iterframes import read
 def test_same_behavior_as_decord(video_path):
     from decord import VideoReader
 
-    frame = read(video_path).__next__()
+    frame = next(read(video_path))
     decord_frame = VideoReader(video_path).next().asnumpy()
 
     assert frame.shape == decord_frame.shape
@@ -20,8 +20,7 @@ def test_same_behavior_as_decord(video_path):
 def test_same_behavior_as_decord_with_resize(video_path, height, width):
     from decord import VideoReader
 
-    frame = read(video_path, height=height, width=width).__next__()
-
+    frame = next(read(video_path, height=height, width=width))
     decord_frame = VideoReader(video_path, width=width, height=height).next().asnumpy()
 
     assert frame.shape == decord_frame.shape
@@ -40,13 +39,12 @@ def test_whole_video(video_path):
 def _test_benchmark(video_path):
     from decord import VideoReader
 
-    vr = VideoReader(video_path)
-
     def read_with_iterframes():
-        for frame in read(video_path, prefetch_frames=1):
+        for frame in read(video_path):
             pass
 
     def read_with_decord():
+        vr = VideoReader(video_path)
         while True:
             try:
                 frame = vr.next()
