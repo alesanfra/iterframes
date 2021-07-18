@@ -4,7 +4,7 @@ version = "0.2.1"
 authors = ["Alessio Sanfratello"]
 edition = "2018"
 description = "Iterate on video frames quickly"
-readme = "Readme.md"
+readme = "README.md"
 
 [dependencies]
 pyo3 = { version = "*", features = ["extension-module", "abi3-py36"] }
