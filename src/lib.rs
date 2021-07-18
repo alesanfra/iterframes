@@ -1,10 +1,27 @@
-use std::sync::mpsc::Receiver;
-
+use crossbeam::channel::Receiver;
 use ffmpeg::frame::Video;
-use numpy::{PyArray, PyArray3};
+use pyo3::exceptions::PyRuntimeError;
+use pyo3::iter::IterNextOutput;
 use pyo3::prelude::*;
+use pyo3::types::PyByteArray;
+use pyo3::{wrap_pyfunction, PyIterProtocol};
 
 mod decoder;
+
+#[pyclass(module = "iterframes")]
+pub struct Frame {
+    #[pyo3(get)]
+    buffer: Py<PyByteArray>,
+
+    #[pyo3(get)]
+    height: usize,
+
+    #[pyo3(get)]
+    width: usize,
+
+    #[pyo3(get)]
+    stride: usize,
+}
 
 #[pyclass(module = "iterframes")]
 pub struct FrameReader {
@@ -24,21 +41,48 @@ impl FrameReader {
             channel: decoder::start(path, height, width, prefetch_frames),
         }
     }
+}
 
-    fn next(self_: PyRefMut<Self>) -> PyResult<Option<(Py<PyArray3<u8>>, usize, usize, usize)>> {
+#[pyproto]
+impl PyIterProtocol for FrameReader {
+    fn __iter__(self_: PyRef<Self>) -> PyRef<Self> {
+        self_
+    }
+
+    fn __next__(self_: PyRefMut<Self>) -> IterNextOutput<Frame, String> {
         if let Ok(Some(frame)) = self_.channel.recv() {
-            let height = frame.height() as usize;
-            let width = frame.width() as usize;
-            let stride = frame.stride(0) as usize;
-
-            let tensor = PyArray::from_slice(self_.py(), frame.data(0))
-                .reshape((height, stride / 3, 3))
-                .unwrap()
-                .into();
-            Ok(Some((tensor, height, width, stride)))
+            let frame = Frame {
+                buffer: PyByteArray::new(self_.py(), &frame.data(0)).into(),
+                height: frame.height() as usize,
+                width: frame.width() as usize,
+                stride: frame.stride(0),
+            };
+            IterNextOutput::Yield(frame)
         } else {
-            Ok(None)
+            IterNextOutput::Return(String::from("Ended"))
         }
+    }
+}
+
+#[pyfunction]
+fn read_batch(
+    py: Python,
+    path: &str,
+    height: Option<u32>,
+    width: Option<u32>,
+) -> PyResult<Vec<Frame>> {
+    match decoder::decode_all_video(path, height, width) {
+        Ok(frames) => Ok(frames
+            .into_iter()
+            .map(|frame| Frame {
+                buffer: PyByteArray::new(py, &frame.data(0)).into(),
+                height: frame.height() as usize,
+                width: frame.width() as usize,
+                stride: frame.stride(0) as usize,
+            })
+            .rev()
+            .collect::<Vec<Frame>>()),
+        Err(_) => Err(PyRuntimeError::new_err("Error on decoding")),
     }
 }
 
@@ -47,5 +91,7 @@ impl FrameReader {
 fn iterframes(_py: Python, module: &PyModule) -> PyResult<()> {
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
     module.add_class::<FrameReader>()?;
+    module.add_class::<Frame>()?;
+    module.add_function(wrap_pyfunction!(read_batch, module)?)?;
     Ok(())
 }

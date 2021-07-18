@@ -1,23 +1,17 @@
-from typing import Optional
-import numpy as np
+from typing import Optional as _Optional
 
-from .iterframes import FrameReader as _FrameReader
+import numpy as _np
+
+from .iterframes import FrameReader as _FrameReader, read_batch
 
 
 def read(
     path: str,
-    height: Optional[int] = None,
-    width: Optional[int] = None,
-    prefetch_frames: Optional[int] = None,
+    height: _Optional[int] = None,
+    width: _Optional[int] = None,
+    prefetch_frames: _Optional[int] = None,
 ):
-    fr = _FrameReader(path, height, width, prefetch_frames)
-
-    while True:
-        res = fr.next()
-        if res is None:
-            break
-        else:
-            frame, height, width, stride = res
-            yield np.lib.stride_tricks.as_strided(
-                frame, (height, width, 3), (stride, 3, 1)
-            )
+    for res in _FrameReader(path, height, width, prefetch_frames):
+        yield _np.lib.stride_tricks.as_strided(
+            res.buffer, (res.height, res.width, 3), (res.stride, 3, 1)
+        )
