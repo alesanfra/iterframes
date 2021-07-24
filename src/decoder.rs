@@ -1,8 +1,6 @@
 use std::thread;
 
-use crossbeam::channel::bounded;
-use crossbeam::channel::Receiver;
-use crossbeam::channel::Sender;
+use crossbeam::channel::{bounded, Receiver, Sender};
 use ffmpeg::format::{input, Pixel};
 use ffmpeg::media::Type;
 use ffmpeg::software::scaling::{context::Context, flag::Flags};

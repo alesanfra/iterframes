@@ -4,7 +4,7 @@ use pyo3::exceptions::PyRuntimeError;
 use pyo3::iter::IterNextOutput;
 use pyo3::prelude::*;
 use pyo3::types::PyByteArray;
-use pyo3::{wrap_pyfunction, PyIterProtocol};
+use pyo3::PyIterProtocol;
 
 mod decoder;
 
@@ -49,7 +49,7 @@ impl PyIterProtocol for FrameReader {
         self_
     }
 
-    fn __next__(self_: PyRefMut<Self>) -> IterNextOutput<Frame, String> {
+    fn __next__(self_: PyRefMut<Self>) -> IterNextOutput<Frame, ()> {
         if let Ok(Some(frame)) = self_.channel.recv() {
             let frame = Frame {
                 buffer: PyByteArray::new(self_.py(), &frame.data(0)).into(),
@@ -59,7 +59,7 @@ impl PyIterProtocol for FrameReader {
             };
             IterNextOutput::Yield(frame)
         } else {
-            IterNextOutput::Return(String::from("Ended"))
+            IterNextOutput::Return(())
         }
     }
 }

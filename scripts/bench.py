@@ -1,8 +1,7 @@
-import time
 import timeit
 from pathlib import Path
 
-from iterframes import read, read_frames
+from iterframes import read
 
 
 def test_benchmark(video_path):
@@ -32,5 +31,5 @@ def test_benchmark(video_path):
 
 here = Path(__file__).parent
 
-test_benchmark(here.parent / "tests/data/1280x720.mp4")
-# test_benchmark(here.parent / "tests/data/video_480x270.mp4")
+# test_benchmark(here.parent / "tests/data/1280x720.mp4")
+test_benchmark(here.parent / "tests/data/video_480x270.mp4")
