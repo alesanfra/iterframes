@@ -58,7 +58,7 @@ This command will compile iterframe and install it in the active virtualenv.
 
 ## Build
 
-Currently only Linux an MacOS are supported. 
+Currently only Linux an MacOS are supported.
 
 
 ### Linux

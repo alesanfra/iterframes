@@ -1,0 +1,25 @@
+[build-system]
+requires = ["maturin>=0.12,<1.0"]
+build-backend = "maturin"
+
+[project]
+name = "iterframes"
+requires-python = ">=3.6"
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Rust",
+    "Topic :: Multimedia :: Video",
+]
+dependencies = [
+    "numpy>=1.16.0",
+]
+
+[tool.black]
+target_version = ["py36"]
+line-length = 79
+
+[tool.isort]
+profile = "black"
+line_length = 79

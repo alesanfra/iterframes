@@ -1,6 +1,6 @@
-## IDE ##
-
+# IDE
 .idea/
 .vscode/
 
-
+# VCS
+.git/
