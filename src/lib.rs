@@ -50,16 +50,14 @@ impl PyIterProtocol for FrameReader {
     }
 
     fn __next__(self_: PyRefMut<Self>) -> IterNextOutput<Frame, ()> {
-        if let Ok(Some(frame)) = self_.channel.recv() {
-            let frame = Frame {
+        match self_.channel.recv() {
+            Ok(Some(frame)) => IterNextOutput::Yield(Frame {
                 buffer: PyByteArray::new(self_.py(), &frame.data(0)).into(),
                 height: frame.height() as usize,
                 width: frame.width() as usize,
                 stride: frame.stride(0),
-            };
-            IterNextOutput::Yield(frame)
-        } else {
-            IterNextOutput::Return(())
+            }),
+            _ => IterNextOutput::Return(()),
         }
     }
 }
