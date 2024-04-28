@@ -1,5 +1,5 @@
 auditwheel
 delocate
-maturin
+maturin[patchelf]
 pre-commit
 pytest

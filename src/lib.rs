@@ -1,10 +1,8 @@
 use crossbeam::channel::Receiver;
 use ffmpeg::frame::Video;
 use pyo3::exceptions::PyRuntimeError;
-use pyo3::iter::IterNextOutput;
 use pyo3::prelude::*;
 use pyo3::types::PyByteArray;
-use pyo3::PyIterProtocol;
 
 mod decoder;
 
@@ -41,23 +39,20 @@ impl FrameReader {
             channel: decoder::start(path, height, width, prefetch_frames),
         }
     }
-}
 
-#[pyproto]
-impl PyIterProtocol for FrameReader {
     fn __iter__(self_: PyRef<Self>) -> PyRef<Self> {
         self_
     }
 
-    fn __next__(self_: PyRefMut<Self>) -> IterNextOutput<Frame, ()> {
+    fn __next__(self_: PyRefMut<Self>) -> Option<Frame> {
         match self_.channel.recv() {
-            Ok(Some(frame)) => IterNextOutput::Yield(Frame {
-                buffer: PyByteArray::new(self_.py(), &frame.data(0)).into(),
+            Ok(Some(frame)) => Some(Frame {
+                buffer: PyByteArray::new_bound(self_.py(), frame.data(0)).into(),
                 height: frame.height() as usize,
                 width: frame.width() as usize,
                 stride: frame.stride(0),
             }),
-            _ => IterNextOutput::Return(()),
+            _ => None,
         }
     }
 }
@@ -73,10 +68,10 @@ fn read_batch(
         Ok(frames) => Ok(frames
             .into_iter()
             .map(|frame| Frame {
-                buffer: PyByteArray::new(py, &frame.data(0)).into(),
+                buffer: PyByteArray::new_bound(py, frame.data(0)).into(),
                 height: frame.height() as usize,
                 width: frame.width() as usize,
-                stride: frame.stride(0) as usize,
+                stride: frame.stride(0),
             })
             .rev()
             .collect::<Vec<Frame>>()),

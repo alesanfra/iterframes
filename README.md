@@ -34,7 +34,7 @@ brew install pkg-config ffmpeg
 On Debian-based systems:
 
 ```shell
-apt install -y clang libavcodec-dev libavformat-dev libavutil-dev pkg-config
+apt install -y clang libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev pkg-config
 ```
 
 Other `libav*-dev` and `libsw*-dev` packages may be required if you enable the corresponding features,

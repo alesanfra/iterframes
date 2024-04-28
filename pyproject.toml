@@ -1,10 +1,10 @@
 [build-system]
-requires = ["maturin>=0.12,<1.0"]
+requires = ["maturin>=1,<2"]
 build-backend = "maturin"
 
 [project]
 name = "iterframes"
-requires-python = ">=3.6"
+requires-python = ">=3.7"
 classifiers = [
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [tool.black]
-target_version = ["py36"]
+target_version = ["py37"]
 line-length = 79
 
 [tool.isort]
