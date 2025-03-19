@@ -44,7 +44,8 @@ fn decode_video(
             .ok_or(ffmpeg::Error::StreamNotFound)?;
         let video_stream_index = input.index();
 
-        let mut decoder = input.codec().decoder().video()?;
+        let context_decoder = ffmpeg::codec::context::Context::from_parameters(input.parameters())?;
+        let mut decoder = context_decoder.decoder().video()?;
 
         let mut scaler = Context::get(
             decoder.format(),
@@ -98,7 +99,8 @@ pub fn decode_all_video(
             .unwrap();
         let video_stream_index = input.index();
 
-        let mut decoder = input.codec().decoder().video().unwrap();
+        let context_decoder = ffmpeg::codec::context::Context::from_parameters(input.parameters())?;
+        let mut decoder = context_decoder.decoder().video()?;
 
         let mut scaler = Context::get(
             decoder.format(),
