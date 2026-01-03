@@ -1,12 +1,13 @@
 [package]
 name = "iterframes"
 edition = "2021"
-
-[dependencies]
-pyo3 = { version = "*", features = ["extension-module", "abi3-py39"] }
-ffmpeg = { package = "ffmpeg-next", version = "=7.1.0" }
-crossbeam = "*"
+version = "0.4.0"
 
 [lib]
 name = "iterframes"
 crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = "*"
+ffmpeg = { package = "ffmpeg-next", version = "=7.1.0" }
+crossbeam = "*"

@@ -1,13 +1,14 @@
 [build-system]
-requires = ["maturin>=1.0,<2.0"]
+requires = ["maturin>=1.9,<2.0"]
 build-backend = "maturin"
 
 [project]
 name = "iterframes"
 description = "Iterate on video frames quickly"
+authors = [
+    { name = "Alessio Sanfratello", email = "sanfra90@gmail.com" },
+]
 readme = "README.md"
-authors = [{name="Alessio Sanfratello"}]
-version = "0.4.0"
 requires-python = ">=3.9"
 classifiers = [
     "Intended Audience :: Science/Research",
@@ -16,18 +17,24 @@ classifiers = [
     "Programming Language :: Rust",
     "Topic :: Multimedia :: Video",
 ]
+dynamic = ["version"]
 dependencies = [
     "numpy>=1.16.0",
 ]
 
 [project.urls]
 Homepage = "https://github.com/alesanfra/iterframes"
-Repository = "https://github.com/alesanfra/iterframes"
+Source = "https://github.com/alesanfra/iterframes"
 
-[tool.black]
-target_version = ["py36"]
+[tool.maturin]
+features = ["pyo3/extension-module", "pyo3/abi3-py39"]
+
+[tool.ruff]
 line-length = 79
 
-[tool.isort]
-profile = "black"
-line_length = 79
+[tool.ruff.lint]
+select = ["E", "F", "I"]  # Enable pycodestyle errors, pyflakes, and isort
+fixable = ["ALL"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["iterframes"]
