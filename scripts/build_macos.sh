@@ -6,7 +6,7 @@ echo "Build wheel"
 maturin build --strip --release
 
 echo "Fix shared libs"
-delocate-wheel -v target/wheels/iterframes-*-abi3-macosx_10_7_x86_64.whl
+delocate-wheel -v target/wheels/iterframes-*-abi3-macosx_*.whl
 
 echo "Check wheel"
-delocate-listdeps target/wheels/iterframes-*-abi3-macosx_10_7_x86_64.whl
+delocate-listdeps target/wheels/iterframes-*-abi3-macosx_*.whl

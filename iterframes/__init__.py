@@ -2,7 +2,8 @@ from typing import Optional as _Optional
 
 import numpy as _np
 
-from .iterframes import FrameReader as _FrameReader, read_batch
+from .iterframes import FrameReader as _FrameReader
+from .iterframes import read_batch
 
 
 def read(

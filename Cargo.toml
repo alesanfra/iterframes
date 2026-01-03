@@ -1,18 +1,13 @@
 [package]
 name = "iterframes"
-version = "0.3.0"
-authors = ["Alessio Sanfratello"]
 edition = "2021"
-description = "Iterate on video frames quickly"
-readme = "README.md"
-homepage = "https://github.com/alesanfra/iterframes"
-repository = "https://github.com/alesanfra/iterframes"
-
-[dependencies]
-pyo3 = { version = "*", features = ["extension-module", "abi3-py36"] }
-ffmpeg = { package = "ffmpeg-next", version = "*" }
-crossbeam = "*"
+version = "0.4.0"
 
 [lib]
 name = "iterframes"
 crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = "*"
+ffmpeg = { package = "ffmpeg-next", version = "=7.1.0" }
+crossbeam = "*"

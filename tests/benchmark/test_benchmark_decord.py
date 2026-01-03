@@ -1,9 +1,15 @@
+import platform
 import timeit
 
 import numpy as np
 import pytest
 
 from iterframes import read
+
+# Skip all tests in this module on macOS
+pytestmark = pytest.mark.skipif(
+    platform.system() == "Darwin", reason="Decord tests are skipped on macOS"
+)
 
 
 def test_same_behavior_as_decord(video_path):
