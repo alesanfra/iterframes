@@ -93,17 +93,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "252afb9ae5eaa683babdc6a068b3f5726eb19e05070c731f9b2a23a7c3e8ed34"
 
 [[package]]
-name = "ffmpeg-next"
-version = "9.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6380599799e175191eb7ffe82c97f36a2a90a36cbc54c738a903e5287d7f516a"
-dependencies = [
- "bitflags",
- "ffmpeg-sys-next",
- "libc",
-]
-
-[[package]]
 name = "ffmpeg-sys-next"
 version = "9.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -146,7 +135,8 @@ name = "iterframes"
 version = "0.4.0"
 dependencies = [
  "crossbeam-channel",
- "ffmpeg-next",
+ "ffmpeg-sys-next",
+ "libc",
  "pyo3",
 ]
 

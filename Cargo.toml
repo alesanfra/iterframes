@@ -16,18 +16,18 @@ crate-type = ["cdylib"]
 [features]
 # Link FFmpeg statically. The wheels use it with the build from
 # scripts/build-ffmpeg.sh; without it FFmpeg is linked dynamically.
-static = ["ffmpeg/static"]
+static = ["ffmpeg-sys-next/static"]
 
 [dependencies]
 # One wheel per platform for every CPython from 3.11 on.
 pyo3 = { version = "0.29", features = ["abi3-py311"] }
 crossbeam-channel = "0.5"
+libc = "0.2"
 
-[dependencies.ffmpeg]
-package = "ffmpeg-next"
+[dependencies.ffmpeg-sys-next]
 version = "9.0"
 default-features = false
-features = ["codec", "format", "software-scaling"]
+features = ["avcodec", "avformat", "swscale"]
 
 [profile.release]
 lto = true

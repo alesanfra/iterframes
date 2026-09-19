@@ -1,11 +1,8 @@
 use std::thread;
 
 use crossbeam_channel::{Receiver, Sender, bounded};
-use ffmpeg::codec::threading;
-use ffmpeg::format::{Pixel, input};
-use ffmpeg::media::Type;
-use ffmpeg::software::scaling::{Context as Scaler, Flags};
-use ffmpeg::util::frame::video::Video;
+
+use crate::ffmpeg::{self, Decoder, Frame, Input, Packet, Scaler};
 
 pub enum Error {
     /// The file could not be opened or has no video stream.
@@ -14,7 +11,7 @@ pub enum Error {
     Decode(ffmpeg::Error),
 }
 
-pub type Message = Result<Video, Error>;
+pub type Message = Result<Frame, Error>;
 
 /// Decode `path` on a background thread and return the channel that
 /// receives its RGB24 frames. The channel holds at most `prefetch` frames;
@@ -42,29 +39,18 @@ fn decode(
     tx: &Sender<Message>,
 ) -> Result<(), Error> {
     let open = |err| Error::Open(path.to_owned(), err);
-    let mut ictx = input(path).map_err(open)?;
-    let stream = ictx
-        .streams()
-        .best(Type::Video)
-        .ok_or(ffmpeg::Error::StreamNotFound)
-        .map_err(open)?;
-    let index = stream.index();
-
-    let mut context =
-        ffmpeg::codec::context::Context::from_parameters(stream.parameters()).map_err(open)?;
-    // libavcodec decodes on a single thread unless asked otherwise;
-    // a count of 0 lets it pick one thread per core.
-    context.set_threading(threading::Config::kind(threading::Type::Frame));
-    let mut decoder = context.decoder().video().map_err(open)?;
+    let mut input = Input::open(path).map_err(open)?;
+    let mut decoder = input.video_decoder().map_err(open)?;
 
     let mut converter = Converter {
         height,
         width,
         scaler: None,
     };
-    for (stream, packet) in ictx.packets() {
-        if stream.index() == index {
-            decoder.send_packet(&packet).map_err(Error::Decode)?;
+    let mut packet = Packet::new();
+    while input.read(&mut packet).map_err(Error::Decode)? {
+        if packet.stream() == decoder.stream() {
+            decoder.send(&packet).map_err(Error::Decode)?;
             if !converter.drain(&mut decoder, tx)? {
                 return Ok(());
             }
@@ -84,18 +70,13 @@ struct Converter {
 impl Converter {
     /// Send every frame the decoder has ready. Return `false` when the
     /// receiver is gone, so that decoding can stop early.
-    fn drain(
-        &mut self,
-        decoder: &mut ffmpeg::decoder::Video,
-        tx: &Sender<Message>,
-    ) -> Result<bool, Error> {
-        let mut decoded = Video::empty();
-        while decoder.receive_frame(&mut decoded).is_ok() {
-            let mut rgb = Video::empty();
-            self.scaler(&decoded)?
-                .run(&decoded, &mut rgb)
+    fn drain(&mut self, decoder: &mut Decoder, tx: &Sender<Message>) -> Result<bool, Error> {
+        let mut decoded = Frame::new();
+        while decoder.receive(&mut decoded) {
+            let rgb = self
+                .scaler(&decoded)?
+                .run(&decoded)
                 .map_err(Error::Decode)?;
-            pack(&mut rgb);
             if tx.send(Ok(rgb)).is_err() {
                 return Ok(false);
             }
@@ -105,42 +86,20 @@ impl Converter {
 
     /// The scaler for `frame`, rebuilt whenever the input size or pixel
     /// format changes within the stream.
-    fn scaler(&mut self, frame: &Video) -> Result<&mut Scaler, Error> {
-        let stale = self.scaler.as_ref().is_none_or(|scaler| {
-            let input = scaler.input();
-            (input.format, input.width, input.height)
-                != (frame.format(), frame.width(), frame.height())
-        });
-        if stale {
-            let scaler = Scaler::get(
-                frame.format(),
-                frame.width(),
-                frame.height(),
-                Pixel::RGB24,
+    fn scaler(&mut self, frame: &Frame) -> Result<&mut Scaler, Error> {
+        if !self
+            .scaler
+            .as_ref()
+            .is_some_and(|scaler| scaler.accepts(frame))
+        {
+            let scaler = Scaler::new(
+                frame,
                 self.width.unwrap_or(frame.width()),
                 self.height.unwrap_or(frame.height()),
-                Flags::BILINEAR,
             )
             .map_err(Error::Decode)?;
             self.scaler = Some(scaler);
         }
         Ok(self.scaler.as_mut().expect("scaler was just set"))
-    }
-}
-
-/// Move the rows of `frame` next to each other, dropping the padding that
-/// swscale leaves after each of them when the row is not a multiple of 32
-/// bytes. Python then wraps the buffer as a contiguous array with no copy,
-/// and the rare padded frame is fixed here, off the GIL.
-fn pack(frame: &mut Video) {
-    let row = frame.width() as usize * 3;
-    let stride = frame.stride(0);
-    if stride == row {
-        return;
-    }
-    let height = frame.height() as usize;
-    let data = frame.data_mut(0);
-    for y in 1..height {
-        data.copy_within(y * stride..y * stride + row, y * row);
     }
 }

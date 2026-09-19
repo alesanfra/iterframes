@@ -44,7 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tests compare the frames with PyAV instead of decord
 - CI lints Rust and Python, tests every wheel, and publishes to PyPI
   through trusted publishing
-- Updated to PyO3 0.29, ffmpeg-next 9, and Rust edition 2024
+- Updated to PyO3 0.29 and Rust edition 2024
+- `ffmpeg-next` is replaced by a thin wrapper over the raw bindings of
+  `ffmpeg-sys-next`
 
 ## [0.2.0] - 2021-01-01
 

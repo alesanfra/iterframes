@@ -2,12 +2,12 @@ use std::ffi::c_int;
 use std::path::PathBuf;
 
 use crossbeam_channel::Receiver;
-use ffmpeg::util::frame::video::Video;
 use pyo3::exceptions::{PyBufferError, PyOSError, PyRuntimeError, PyValueError};
 use pyo3::ffi;
 use pyo3::prelude::*;
 
 mod decoder;
+mod ffmpeg;
 
 use decoder::{Error, Message};
 
@@ -15,8 +15,8 @@ impl From<Error> for PyErr {
     fn from(err: Error) -> PyErr {
         match err {
             // OSError picks the subclass from errno, e.g. FileNotFoundError.
-            Error::Open(path, ffmpeg::Error::Other { errno }) => {
-                PyOSError::new_err((errno, ffmpeg::Error::Other { errno }.to_string(), path))
+            Error::Open(path, err) if err.errno().is_some() => {
+                PyOSError::new_err((err.errno(), err.to_string(), path))
             }
             Error::Open(path, err) => {
                 PyValueError::new_err(format!("cannot read video {path:?}: {err}"))
@@ -31,15 +31,16 @@ impl From<Error> for PyErr {
 /// stay in the FFmpeg frame, so `numpy.asarray(frame)` copies nothing.
 #[pyclass(module = "iterframes", frozen)]
 struct Frame {
-    frame: Video,
+    frame: ffmpeg::Frame,
     shape: [ffi::Py_ssize_t; 3],
     strides: [ffi::Py_ssize_t; 3],
 }
 
 impl Frame {
-    /// Wrap `frame`, whose rows the decoder has already packed.
-    fn new(frame: Video) -> Self {
+    /// Wrap `frame`, an RGB24 frame whose rows follow each other.
+    fn new(frame: ffmpeg::Frame) -> Self {
         let (height, width) = (frame.height() as isize, frame.width() as isize);
+        debug_assert_eq!(frame.stride(0), width as usize * 3);
         Self {
             frame,
             shape: [height, width, 3],
@@ -64,7 +65,7 @@ impl Frame {
         // live as long as `frame`, which `view.obj` keeps alive, and nothing
         // on the Rust side reads or writes them once the frame is wrapped.
         unsafe {
-            (*view).buf = (*frame.frame.as_ptr()).data[0].cast();
+            (*view).buf = frame.frame.data(0).cast();
             (*view).len = height * width * channels;
             (*view).readonly = 0;
             (*view).itemsize = 1;
@@ -147,15 +148,8 @@ mod iterframes {
     #[pymodule_init]
     fn init(module: &Bound<'_, PyModule>) -> PyResult<()> {
         module.add("__version__", env!("CARGO_PKG_VERSION"))?;
-        module.add("FFMPEG_VERSION", unsafe {
-            std::ffi::CStr::from_ptr(ffmpeg::ffi::av_version_info())
-                .to_string_lossy()
-                .into_owned()
-        })?;
-        ffmpeg::init()
-            .map_err(|err| PyRuntimeError::new_err(format!("cannot initialize FFmpeg: {err}")))?;
-        // Errors reach Python as exceptions; keep FFmpeg's warnings off stderr.
-        ffmpeg::util::log::set_level(ffmpeg::util::log::Level::Error);
+        module.add("FFMPEG_VERSION", ffmpeg::version())?;
+        ffmpeg::init();
         Ok(())
     }
 }
