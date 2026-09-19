@@ -85,7 +85,7 @@ jobs:
           # The oldest and newest supported Pythons load the same abi3 wheel.
           for python in 3.10 3.14; do
             uv sync --frozen --no-install-project --python $python
-            uv pip install iterframes --no-index --find-links dist --force-reinstall
+            uv pip install --reinstall-package iterframes dist/*.whl
             uv run --no-sync pytest
           done
 
@@ -129,7 +129,7 @@ jobs:
         shell: bash
         run: |
           uv sync --frozen --no-install-project
-          uv pip install iterframes --no-index --find-links dist --force-reinstall
+          uv pip install --reinstall-package iterframes dist/*.whl
           uv run --no-sync pytest
 
   sdist:
