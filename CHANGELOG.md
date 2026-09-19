@@ -6,11 +6,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 From 0.4.0 on, [release-please](https://github.com/googleapis/release-please)
 writes each entry from the Conventional Commits since the previous release.
 
-## Unreleased
+## [0.4.0](https://github.com/alesanfra/iterframes/compare/v0.3.0...v0.4.0) (2026-09-19)
 
-Notes written by hand for 0.4.0, the rewrite. release-please inserts its
-0.4.0 entry below this section; fold the two together in the release pull
-request.
+The rewrite: static FFmpeg wheels, frames without copies, and hardware
+decoding.
 
 ### Breaking
 - Python 3.11 or later is required, for the buffer protocol in the
