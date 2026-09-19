@@ -6,11 +6,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 From 0.4.0 on, [release-please](https://github.com/googleapis/release-please)
 writes each entry from the Conventional Commits since the previous release.
 
-## Unreleased
+## [0.4.0](https://github.com/alesanfra/iterframes/compare/v0.3.0...v0.4.0) (2026-09-19)
 
-Notes written by hand for 0.4.0, the rewrite. release-please inserts its
-0.4.0 entry below this section; fold the two together in the release pull
-request.
+The rewrite: static FFmpeg wheels, frames without copies, and hardware
+decoding.
 
 ### Breaking
 - Python 3.11 or later is required, for the buffer protocol in the
@@ -60,34 +59,6 @@ request.
   builds the static FFmpeg, links it, and generates its bindings, so that
   `maturin build` needs no FFmpeg installed and no environment variables.
   The system FFmpeg is no longer used, and the `static` feature is gone
-
-## [0.4.0](https://github.com/alesanfra/iterframes/compare/v0.3.0...v0.4.0) (2026-09-19)
-
-
-### ⚠ BREAKING CHANGES
-
-* `hwaccel` and `HWACCELS` are gone; use `device` and `DEVICES`.
-* build FFmpeg from build.rs and drop ffmpeg-sys-next
-* Python 3.11 or later is required, and FrameReader yields Frame objects instead of (bytearray, height, width) tuples.
-* requires Python 3.10+; read_batch is replaced by read_all.
-
-### Features
-
-* decode on VideoToolbox or NVDEC with hwaccel ([e9c266a](https://github.com/alesanfra/iterframes/commit/e9c266a1441329306c2adfcba637226b1f1ff33d))
-* hand frames to NumPy without a copy ([0d20709](https://github.com/alesanfra/iterframes/commit/0d2070980591af3b0323afbb389d8729b6a2535a))
-* keep frames on the NVIDIA GPU with on_device ([e4f3637](https://github.com/alesanfra/iterframes/commit/e4f3637f538d6fcad64de77b443c0cb55eae1a5f))
-* rename hwaccel to device, with PyTorch's names ([e2473f9](https://github.com/alesanfra/iterframes/commit/e2473f9ae75714aaefa2dbd705480e09fdd06f66))
-* static FFmpeg abi3 wheels, uv, CI, and docs ([#2](https://github.com/alesanfra/iterframes/issues/2)) ([03cb2c3](https://github.com/alesanfra/iterframes/commit/03cb2c35423327f1ad336dfbf3712d25ad09aab2))
-
-
-### Performance Improvements
-
-* convert frames to RGB on several threads ([7fffaf6](https://github.com/alesanfra/iterframes/commit/7fffaf6dc10b56a4e64ece3b4ed6ccb57b9645c6))
-
-
-### Build System
-
-* build FFmpeg from build.rs and drop ffmpeg-sys-next ([80a73d3](https://github.com/alesanfra/iterframes/commit/80a73d3b389b3728b02d3e50ea720fdb6bb8285d))
 
 ## [0.3.0] - 2022-04-22
 
