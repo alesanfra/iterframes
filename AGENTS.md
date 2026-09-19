@@ -17,7 +17,7 @@ decodes the next ones. Keep that true, and say so in the docs.
 
 The package uses maturin's mixed layout: the compiled module is installed
 as `iterframes.iterframes`, and `iterframes/__init__.py` wraps its
-`FrameReader` into `read` and `read_all`.
+`FrameReader` into `read`, `read_all`, and `read_batches`.
 
 ## How decoding works
 
@@ -36,6 +36,11 @@ as `iterframes.iterframes`, and `iterframes/__init__.py` wraps its
   Python code holds it. Never attach to Python there (no `Python::attach`,
   no Python objects in `decoder.rs`); `test_benchmark.py` checks the
   overlap.
+- With `batch_size`, the thread allocates one `ffmpeg::Buffer` per batch
+  and swscale writes each frame into its slice (`Scaler::run_into`); the
+  batch is sent when full, or at the end of the video unless `drop_last`.
+  Python gets it as a `Batch`, a 4-dimensional buffer, with no copy. The
+  channel then holds batches: `prefetch_frames` rounds up to whole ones.
 - Errors travel through the channel and become Python exceptions in
   `impl From<Error> for PyErr`. A closed channel means the end of the video.
 - Dropping the reader closes the channel; the thread notices on its next
@@ -76,11 +81,11 @@ as `iterframes.iterframes`, and `iterframes/__init__.py` wraps its
 
 | Path | Contents |
 | --- | --- |
-| `src/lib.rs` | PyO3 module: `Frame`, `FrameReader`, error mapping, module init |
+| `src/lib.rs` | PyO3 module: `Frame`, `Batch`, `FrameReader`, error mapping, module init |
 | `src/decoder.rs` | Decoding thread |
 | `src/ffmpeg.rs` | Safe wrappers over the FFmpeg calls the crate needs |
 | `src/dlpack.rs` | DLPack capsules for the planes of `CudaFrame` |
-| `iterframes/__init__.py` | `read`, `read_all` |
+| `iterframes/__init__.py` | `read`, `read_all`, `read_batches` |
 | `build.rs` | Builds and links FFmpeg, generates its bindings |
 | `scripts/build-ffmpeg.sh` | Static FFmpeg and dav1d, run by `build.rs` |
 | `tests/` | pytest suite; frames are compared with PyAV |

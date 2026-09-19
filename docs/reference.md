@@ -52,6 +52,33 @@ Returns every frame of the video in a list. It takes the same arguments as
 [`read`](#read) and keeps the whole video in memory, so use `read` for
 anything but short clips.
 
+## read_batches
+
+```python
+read_batches(path, batch_size, height=None, width=None, prefetch_frames=1, device="cpu", drop_last=False) -> Iterator[numpy.ndarray]
+```
+
+Yields the frames of the video in batches, in order, for models that take
+several frames at once. Each batch is a C-contiguous, writable
+`numpy.ndarray` of shape `(batch_size, height, width, 3)` and dtype
+`uint8`. The frames are decoded straight into it, so unlike `numpy.stack`
+over the frames of `read`, making a batch costs your code no copy.
+
+| Argument | Description |
+| --- | --- |
+| `batch_size` | Frames per batch, at least 1 |
+| `prefetch_frames` | How many decoded frames may wait for your code, rounded up to whole batches. Defaults to 1, that is one batch |
+| `drop_last` | Drop the last batch when the video ends before it is full. By default it is yielded with the frames left over |
+
+The other arguments are those of [`read`](#read); `on_device` is not
+supported. Every frame of a batch has the size of the first frame of the
+video, or `height` and `width`.
+
+```python
+for batch in iterframes.read_batches("video.mp4", 12, height=224, width=224):
+    print(batch.shape)  # (12, 224, 224, 3), except maybe the last one
+```
+
 ## Errors
 
 Errors are raised by the first `next()` on the iterator, not by the call
@@ -90,10 +117,12 @@ FFmpeg also spreads the decoding of each video over several threads.
 ## FrameReader
 
 ```python
-FrameReader(path, height=None, width=None, prefetch_frames=1)
+FrameReader(path, height=None, width=None, prefetch_frames=1, device="cpu", on_device=False, batch_size=None, drop_last=False)
 ```
 
-The iterator behind `read`. It yields `Frame` objects.
+The iterator behind `read` and `read_batches`. It yields `Frame` objects,
+`CudaFrame` objects with `on_device=True`, or `Batch` objects with
+`batch_size`.
 
 ## Frame
 
@@ -111,6 +140,14 @@ for frame in FrameReader("video.mp4"):
 ```
 
 The pixels stay alive as long as the frame or any array or view on it.
+
+## Batch
+
+Frames decoded into a single block of memory, which the buffer protocol
+exposes as a writable, C-contiguous `(frames, height, width, 3)` block of
+unsigned bytes. `read_batches` wraps it with `numpy.asarray`, which copies
+nothing; its pixels stay alive as long as the batch or any array or view on
+it.
 
 ## Hardware decoding
 

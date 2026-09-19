@@ -12,6 +12,7 @@ import numpy as np
 from .iterframes import (
     DEVICES,
     FFMPEG_VERSION,
+    Batch,
     CudaFrame,
     Frame,
     FrameReader,
@@ -21,6 +22,7 @@ from .iterframes import (
 
 __all__ = [
     "DEVICES",
+    "Batch",
     "FFMPEG_VERSION",
     "CudaFrame",
     "Frame",
@@ -29,6 +31,7 @@ __all__ = [
     "__version__",
     "read",
     "read_all",
+    "read_batches",
 ]
 
 PathLike = Union[str, "os.PathLike[str]"]
@@ -86,3 +89,40 @@ def read_all(
     memory, so use :func:`read` for long videos.
     """
     return list(read(path, height, width, prefetch_frames=16, device=device))
+
+
+def read_batches(
+    path: PathLike,
+    batch_size: int,
+    height: Optional[int] = None,
+    width: Optional[int] = None,
+    prefetch_frames: int = 1,
+    device: str = "cpu",
+    drop_last: bool = False,
+) -> Iterator[np.ndarray]:
+    """Yield the frames of the video at ``path`` in batches, in order.
+
+    Each batch is a ``(batch_size, height, width, 3)`` array of ``uint8``
+    RGB pixels. The frames are decoded straight into it, so it costs no
+    copy. The last batch holds the frames left over, unless ``drop_last``
+    drops it. The frames of a batch have the size of the first frame of the
+    video, or ``height`` and ``width``.
+
+    Takes the same arguments as :func:`read`, except ``on_device``. The
+    background thread decodes up to ``prefetch_frames`` frames ahead,
+    rounded up to whole batches.
+    """
+    if batch_size < 1:
+        raise ValueError("batch_size must be at least 1")
+    reader = FrameReader(
+        path,
+        height,
+        width,
+        prefetch_frames,
+        device,
+        batch_size=batch_size,
+        drop_last=drop_last,
+    )
+    # The arrays share memory with the batches, which they keep alive.
+    for batch in reader:
+        yield np.asarray(batch)
