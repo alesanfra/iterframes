@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - FFmpeg decodes on several threads, and waiting for a frame releases the
   GIL, so other Python threads keep running
+- The conversion to RGB, and the resizing, run on several threads too
 - Frames reach NumPy without a copy: the arrays share memory with the
   FFmpeg frames
 - The decoder thread stops as soon as the iterator is dropped

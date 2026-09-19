@@ -271,28 +271,43 @@ pub struct Scaler {
 impl Scaler {
     /// A scaler from frames like `frame` to RGB24 frames of the given size.
     pub fn new(frame: &Frame, width: u32, height: u32) -> Result<Self, Error> {
-        // SAFETY: the pixel format comes from a frame that this FFmpeg
-        // decoded, so it is a valid AVPixelFormat.
-        let context = unsafe {
-            sys::sws_getContext(
-                frame.width() as c_int,
-                frame.height() as c_int,
-                std::mem::transmute::<c_int, sys::AVPixelFormat>(frame.format()),
-                width as c_int,
-                height as c_int,
-                sys::AVPixelFormat::AV_PIX_FMT_RGB24,
-                SWS_BILINEAR,
-                ptr::null_mut(),
-                ptr::null_mut(),
-                ptr::null(),
-            )
-        };
-        Ok(Self {
-            // sws_getContext returns null for sizes or formats it rejects.
-            context: NonNull::new(context).ok_or(Error(sys::AVERROR(libc::EINVAL)))?,
+        let context = NonNull::new(unsafe { sys::sws_alloc_context() })
+            .ok_or(Error(sys::AVERROR(libc::ENOMEM)))?;
+        let scaler = Self {
+            context,
             input: (frame.format(), frame.width(), frame.height()),
             output: (width, height),
-        })
+        };
+        let options: [(&CStr, i64); 8] = [
+            (c"srcw", frame.width().into()),
+            (c"srch", frame.height().into()),
+            (c"src_format", frame.format().into()),
+            (c"dstw", width.into()),
+            (c"dsth", height.into()),
+            (c"dst_format", sys::AVPixelFormat::AV_PIX_FMT_RGB24 as i64),
+            (c"sws_flags", SWS_BILINEAR.into()),
+            // Converting to RGB takes longer than decoding, which already
+            // runs on several threads; 0 is one slice thread per core.
+            (c"threads", 0),
+        ];
+        // SAFETY: the options exist on every SwsContext and take integers;
+        // `scaler` frees the context if initializing it fails.
+        unsafe {
+            for (name, value) in options {
+                check(sys::av_opt_set_int(
+                    context.as_ptr().cast(),
+                    name.as_ptr(),
+                    value,
+                    0,
+                ))?;
+            }
+            check(sys::sws_init_context(
+                context.as_ptr(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+            ))?;
+        }
+        Ok(scaler)
     }
 
     /// Whether `frame` has the size and pixel format this scaler expects.
@@ -306,8 +321,8 @@ impl Scaler {
         debug_assert!(self.accepts(frame));
         let rgb = Frame::new();
         // SAFETY: `rgb` gets buffers for the output size and format before
-        // sws_scale writes into them; `frame` is a decoded frame of the
-        // input size and format.
+        // sws_scale_frame writes into them; `frame` is a decoded frame of
+        // the input size and format.
         unsafe {
             let output = rgb.0.as_ptr();
             (*output).format = sys::AVPixelFormat::AV_PIX_FMT_RGB24 as c_int;
@@ -317,15 +332,7 @@ impl Scaler {
             // contiguous array without copying.
             check(sys::av_frame_get_buffer(output, 1))?;
             let input = frame.0.as_ptr();
-            check(sys::sws_scale(
-                self.context.as_ptr(),
-                (*input).data.as_ptr().cast(),
-                (*input).linesize.as_ptr(),
-                0,
-                (*input).height,
-                (*output).data.as_ptr(),
-                (*output).linesize.as_ptr(),
-            ))?;
+            check(sys::sws_scale_frame(self.context.as_ptr(), output, input))?;
         }
         Ok(rgb)
     }
