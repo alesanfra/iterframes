@@ -1,0 +1,65 @@
+# iterframes
+
+iterframes reads the frames of a video as NumPy arrays. FFmpeg decodes
+them on a background thread, written in Rust with
+[PyO3](https://pyo3.rs/), while your Python code processes the previous
+ones.
+
+```python
+import iterframes
+
+for frame in iterframes.read("video.mp4"):
+    ...  # frame is a (height, width, 3) uint8 array of RGB pixels
+```
+
+## Installation
+
+```console
+pip install iterframes
+```
+
+The wheels include FFmpeg, so nothing else needs to be installed. There is
+one wheel per platform, which works on every CPython from 3.10 on:
+
+| Platform | Architectures |
+| --- | --- |
+| Linux (glibc 2.28 or later) | x86_64, aarch64 |
+| macOS 11 or later | arm64 (Apple silicon) |
+
+On other platforms pip builds from source, which requires a Rust toolchain
+and the FFmpeg development libraries; see [Development](development.md).
+
+## Quick start
+
+Resize the frames while decoding:
+
+```python
+for frame in iterframes.read("video.mp4", height=224, width=224):
+    assert frame.shape == (224, 224, 3)
+```
+
+Load a short clip into memory at once:
+
+```python
+frames = iterframes.read_all("clip.mp4")
+```
+
+Stop whenever you like; the decoder stops with the loop:
+
+```python
+for index, frame in enumerate(iterframes.read("video.mp4")):
+    if index == 100:
+        break
+```
+
+The [reference](reference.md) describes every argument and the errors
+raised.
+
+## Formats
+
+The bundled FFmpeg reads the containers and codecs FFmpeg supports on its
+own, such as MP4, MKV, WebM, AVI, and MPEG-TS with H.264, H.265, VP8, VP9,
+MPEG-4, ProRes, and MJPEG. AV1 is decoded by
+[dav1d](https://code.videolan.org/videolan/dav1d). Only local files are
+read: network protocols are left out of the build, and hardware decoding
+is not used.

@@ -1,18 +1,35 @@
 [package]
 name = "iterframes"
-version = "0.3.0"
-authors = ["Alessio Sanfratello"]
-edition = "2021"
-description = "Iterate on video frames quickly"
-readme = "README.md"
+version = "0.4.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Python video decoder: iterate over the frames of a video as NumPy arrays"
 homepage = "https://github.com/alesanfra/iterframes"
 repository = "https://github.com/alesanfra/iterframes"
-
-[dependencies]
-pyo3 = { version = "*", features = ["extension-module", "abi3-py36"] }
-ffmpeg = { package = "ffmpeg-next", version = "*" }
-crossbeam = "*"
+license = "LGPL-3.0-only"
+publish = false
 
 [lib]
 name = "iterframes"
 crate-type = ["cdylib"]
+
+[features]
+# Link FFmpeg statically. The wheels use it with the build from
+# scripts/build-ffmpeg.sh; without it FFmpeg is linked dynamically.
+static = ["ffmpeg/static"]
+
+[dependencies]
+# One wheel per platform for every CPython from 3.10 on.
+pyo3 = { version = "0.29", features = ["abi3-py310"] }
+crossbeam-channel = "0.5"
+
+[dependencies.ffmpeg]
+package = "ffmpeg-next"
+version = "9.0"
+default-features = false
+features = ["codec", "format", "software-scaling"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

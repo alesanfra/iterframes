@@ -1,0 +1,188 @@
+# Wheel build matrix adapted from `maturin generate-ci github`. Every wheel
+# links a static FFmpeg built by scripts/build-ffmpeg.sh, and is abi3, so a
+# single wheel per platform covers every CPython from 3.10 on. Edit by hand.
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - '*'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.1.0
+      - name: Install FFmpeg headers
+        # Clippy compiles the FFmpeg bindings, which need the system headers
+        # and libclang; linking against the distribution's FFmpeg is enough.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
+            libclang-dev pkg-config
+      - name: Check Rust formatting
+        run: cargo fmt --check
+      - name: Lint Rust
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Lint Python
+        run: |
+          uvx ruff@0.16.8 check .
+          uvx ruff@0.16.8 format --check .
+
+  linux:
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      matrix:
+        platform:
+          # Native runners for each architecture: FFmpeg is compiled in the
+          # manylinux container, so there is no cross-compilation to set up.
+          - runner: ubuntu-24.04
+            target: x86_64
+          - runner: ubuntu-24.04-arm
+            target: aarch64
+    steps:
+      - uses: actions/checkout@v7
+      - name: Cache FFmpeg
+        uses: actions/cache@v6
+        with:
+          path: build/ffmpeg
+          key: ffmpeg-linux-${{ matrix.platform.target }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.platform.target }}
+          args: --release --out dist --features static
+          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          manylinux: 2_28
+          # Runs in the same shell as maturin, inside the container, so the
+          # export reaches the build. maturin-action does not forward
+          # PKG_CONFIG_PATH from the job environment.
+          before-script-linux: |
+            dnf install -y clang-devel
+            scripts/build-ffmpeg.sh
+            export PKG_CONFIG_PATH=$PWD/build/ffmpeg/lib/pkgconfig
+      - name: Upload wheels
+        uses: actions/upload-artifact@v7
+        with:
+          name: wheels-linux-${{ matrix.platform.target }}
+          path: dist
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.1.0
+      - name: Run tests
+        shell: bash
+        run: |
+          # The oldest and newest supported Pythons load the same abi3 wheel.
+          for python in 3.10 3.14; do
+            uv sync --frozen --no-install-project --python $python
+            uv pip install --reinstall-package iterframes dist/*.whl
+            uv run --no-sync pytest
+          done
+
+  macos:
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      matrix:
+        platform:
+          # Apple silicon only: Apple is phasing out Intel Macs.
+          - runner: macos-15
+            target: aarch64
+    env:
+      # Read by both the FFmpeg build and maturin, which tags the wheel.
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Cache FFmpeg
+        uses: actions/cache@v6
+        with:
+          path: build/ffmpeg
+          key: ffmpeg-macos-${{ matrix.platform.target }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+      - name: Build FFmpeg
+        run: |
+          command -v pkg-config || brew install pkgconf
+          scripts/build-ffmpeg.sh
+          echo "PKG_CONFIG_PATH=$PWD/build/ffmpeg/lib/pkgconfig" >> "$GITHUB_ENV"
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.platform.target }}
+          args: --release --out dist --features static
+          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+      - name: Upload wheels
+        uses: actions/upload-artifact@v7
+        with:
+          name: wheels-macos-${{ matrix.platform.target }}
+          path: dist
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.1.0
+      - name: Run tests
+        shell: bash
+        run: |
+          uv sync --frozen --no-install-project
+          uv pip install --reinstall-package iterframes dist/*.whl
+          uv run --no-sync pytest
+
+  sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+      - name: Upload sdist
+        uses: actions/upload-artifact@v7
+        with:
+          name: wheels-sdist
+          path: dist
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
+    needs: [lint, linux, macos, sdist]
+    permissions:
+      # Use to sign the release artifacts
+      id-token: write
+      # Used to upload release artifacts
+      contents: write
+      # Used to generate artifact attestation
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v8
+      - name: Generate artifact attestation
+        uses: actions/attest@v4
+        with:
+          subject-path: 'wheels-*/*'
+
+  publish:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
+    needs: [release]
+    # Naming an environment records the run under Deployments, where the
+    # release can also be gated behind a review.
+    environment:
+      name: pypi
+      url: https://pypi.org/project/iterframes/${{ github.ref_name }}
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.1.0
+      - name: Publish to PyPI
+        # Trusted publishing: PyPI mints a short-lived token from the job's
+        # OIDC identity, so no API token is stored. "always" fails loudly if
+        # that identity is missing instead of falling back.
+        run: uv publish --trusted-publishing always 'wheels-*/*'

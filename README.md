@@ -1,77 +1,41 @@
-[![PyPI version](https://badge.fury.io/py/iterframes.svg)](https://badge.fury.io/py/iterframes)
+# iterframes
 
-# IterFrames - python video decoder
+[![PyPI](https://img.shields.io/pypi/v/iterframes.svg)](https://pypi.org/project/iterframes/)
+[![CI](https://github.com/alesanfra/iterframes/actions/workflows/ci.yaml/badge.svg)](https://github.com/alesanfra/iterframes/actions/workflows/ci.yaml)
+[![Documentation](https://readthedocs.org/projects/iterframes/badge/?version=latest)](https://iterframes.readthedocs.io)
 
-IterFrames is a simple Python video decoder implemented in Rust.
-
-## Use
+Iterate over the frames of a video as NumPy arrays. FFmpeg decodes them on
+a background thread, written in Rust, while your code processes the
+previous ones.
 
 ```python
 import iterframes
 
 for frame in iterframes.read("video.mp4"):
-    # frame is a numpy array with shape (height, width, 3)
-    pass
+    ...  # frame is a (height, width, 3) uint8 array of RGB pixels
+
+# Resize while decoding
+for frame in iterframes.read("video.mp4", height=224, width=224):
+    ...
 ```
 
-## Develop
+## Installation
 
-To develop IterFrames you need:
-
-* working rust toolchain (e.g. https://rustup.rs)
-* working python 3.6+ environment
-
-### Install ffmpeg dependencies
-
-On *nix systems, `clang`, `pkg-config` and FFmpeg libraries (including development headers) are required.
-
-On macOS:
-
-```shell
-brew install pkg-config ffmpeg
+```console
+pip install iterframes
 ```
 
-On Debian-based systems:
+The wheels bundle FFmpeg and work on any CPython from 3.10 on, on Linux
+(x86_64, aarch64) and macOS (Apple silicon).
 
-```shell
-apt install -y clang libavcodec-dev libavformat-dev libavutil-dev pkg-config
-```
+## Documentation
 
-Other `libav*-dev` and `libsw*-dev` packages may be required if you enable the corresponding features,
-e.g., `libavdevice-dev` for the `device` feature.
+<https://iterframes.readthedocs.io>: [reference](docs/reference.md) and
+[development guide](docs/development.md).
 
-### Install python dependencies
+## License
 
-IterFrames is built with [maturin](https://github.com/PyO3/maturin). To start developing Iterframes first install all dev dependencies in you virtual env (python 3.6+ required):
-
-```shell
-pip install -r requirements-dev.txt
-```
-
-Then you can build the python package with:
-
-```
-maturin develop
-```
-
-This command will compile iterframe and install it in the active virtualenv.
-
-## Build
-
-Currently only Linux an MacOS are supported.
-
-
-### Linux
-To build a `manylinux2010` wheel just run from project root folder:
-
-```shell
-bash scripts/build_manylinux.sh
-```
-
-### MacOS
-
-Ensure you have installed the required dependencies, then run:
-
-```shell
-bash scripts/build_macos.sh
-```
+iterframes is released under the [LGPL-3.0](LICENSE). The wheels include
+[FFmpeg](https://ffmpeg.org/), built under the LGPL, and
+[dav1d](https://code.videolan.org/videolan/dav1d), under the BSD 2-clause
+license.

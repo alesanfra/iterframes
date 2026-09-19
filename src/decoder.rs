@@ -1,143 +1,128 @@
 use std::thread;
 
-use crossbeam::channel::{bounded, Receiver, Sender};
-use ffmpeg::format::{input, Pixel};
+use crossbeam_channel::{Receiver, Sender, bounded};
+use ffmpeg::codec::threading;
+use ffmpeg::format::{Pixel, input};
 use ffmpeg::media::Type;
-use ffmpeg::software::scaling::{context::Context, flag::Flags};
+use ffmpeg::software::scaling::{Context as Scaler, Flags};
 use ffmpeg::util::frame::video::Video;
 
+pub enum Error {
+    /// The file could not be opened or has no video stream.
+    Open(String, ffmpeg::Error),
+    /// The file was opened, but decoding failed half way.
+    Decode(ffmpeg::Error),
+}
+
+pub type Message = Result<Video, Error>;
+
+/// Decode `path` on a background thread and return the channel that
+/// receives its RGB24 frames. The channel holds at most `prefetch` frames;
+/// it is closed after the last frame or right after an error.
 pub fn start(
     path: String,
     height: Option<u32>,
     width: Option<u32>,
-    prefetch_frames: Option<usize>,
-) -> Receiver<Option<Video>> {
-    // Create channels
-    let (tx, rx) = bounded(prefetch_frames.unwrap_or(1));
-
-    // Start decoder thread
+    prefetch: usize,
+) -> Receiver<Message> {
+    let (tx, rx) = bounded(prefetch);
     thread::spawn(move || {
-        match decode_video(&path, &tx, height, width) {
-            Ok(_) => tx.send(None).unwrap(),
-            Err(e) => {
-                if e.downcast_ref::<ffmpeg::Error>().is_some() {
-                    tx.send(None).unwrap();
-                }
-            }
-        };
+        if let Err(err) = decode(&path, height, width, &tx) {
+            // Nobody is listening once the reader has been dropped.
+            let _ = tx.send(Err(err));
+        }
     });
-
     rx
 }
 
-fn decode_video(
-    path: &String,
-    tx: &Sender<Option<Video>>,
-    height: Option<u32>,
-    width: Option<u32>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    ffmpeg::init()?;
-    if let Ok(mut ictx) = input(path) {
-        let input = ictx
-            .streams()
-            .best(Type::Video)
-            .ok_or(ffmpeg::Error::StreamNotFound)?;
-        let video_stream_index = input.index();
-
-        let mut decoder = input.codec().decoder().video()?;
-
-        let mut scaler = Context::get(
-            decoder.format(),
-            decoder.width(),
-            decoder.height(),
-            Pixel::RGB24,
-            width.unwrap_or_else(|| decoder.width()),
-            height.unwrap_or_else(|| decoder.height()),
-            Flags::BILINEAR,
-        )?;
-
-        for (stream, packet) in ictx.packets() {
-            if stream.index() == video_stream_index {
-                decoder.send_packet(&packet)?;
-                process_frames(&mut decoder, &mut scaler, tx)?;
-            }
-        }
-        decoder.send_eof()?;
-        process_frames(&mut decoder, &mut scaler, tx)?;
-    }
-
-    Ok(())
-}
-
-fn process_frames(
-    decoder: &mut ffmpeg::decoder::Video,
-    scaler: &mut Context,
-    tx: &Sender<Option<Video>>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mut decoded = Video::empty();
-    while decoder.receive_frame(&mut decoded).is_ok() {
-        let mut rgb_frame = Video::empty();
-        scaler.run(&decoded, &mut rgb_frame)?;
-        tx.send(Some(rgb_frame))?;
-    }
-    Ok(())
-}
-
-pub fn decode_all_video(
+fn decode(
     path: &str,
     height: Option<u32>,
     width: Option<u32>,
-) -> Result<Vec<Video>, ffmpeg::Error> {
-    let mut result = Vec::new();
-    ffmpeg::init().unwrap();
-    if let Ok(mut ictx) = input(&path.to_owned()) {
-        let input = ictx
-            .streams()
-            .best(Type::Video)
-            .ok_or(ffmpeg::Error::StreamNotFound)
-            .unwrap();
-        let video_stream_index = input.index();
+    tx: &Sender<Message>,
+) -> Result<(), Error> {
+    let open = |err| Error::Open(path.to_owned(), err);
+    let mut ictx = input(path).map_err(open)?;
+    let stream = ictx
+        .streams()
+        .best(Type::Video)
+        .ok_or(ffmpeg::Error::StreamNotFound)
+        .map_err(open)?;
+    let index = stream.index();
 
-        let mut decoder = input.codec().decoder().video().unwrap();
+    let mut context =
+        ffmpeg::codec::context::Context::from_parameters(stream.parameters()).map_err(open)?;
+    // libavcodec decodes on a single thread unless asked otherwise;
+    // a count of 0 lets it pick one thread per core.
+    context.set_threading(threading::Config::kind(threading::Type::Frame));
+    let mut decoder = context.decoder().video().map_err(open)?;
 
-        let mut scaler = Context::get(
-            decoder.format(),
-            decoder.width(),
-            decoder.height(),
-            Pixel::RGB24,
-            width.unwrap_or_else(|| decoder.width()),
-            height.unwrap_or_else(|| decoder.height()),
-            Flags::BILINEAR,
-        )?;
-
-        let mut packets = ictx.packets();
-
-        loop {
-            let mut stop = false;
-
-            // Send packet
-            if let Some((stream, packet)) = packets.next() {
-                if stream.index() == video_stream_index {
-                    decoder.send_packet(&packet).unwrap();
-                }
-            } else {
-                decoder.send_eof().unwrap();
-                stop = true;
-            }
-
-            let mut decoded = Video::empty();
-
-            // Receive frames
-            while decoder.receive_frame(&mut decoded).is_ok() {
-                let mut rgb_frame = Video::empty();
-                scaler.run(&decoded, &mut rgb_frame).unwrap();
-                result.push(rgb_frame);
-            }
-
-            if stop {
-                break;
+    let mut converter = Converter {
+        height,
+        width,
+        scaler: None,
+    };
+    for (stream, packet) in ictx.packets() {
+        if stream.index() == index {
+            decoder.send_packet(&packet).map_err(Error::Decode)?;
+            if !converter.drain(&mut decoder, tx)? {
+                return Ok(());
             }
         }
     }
-    Ok(result)
+    decoder.send_eof().map_err(Error::Decode)?;
+    converter.drain(&mut decoder, tx)?;
+    Ok(())
+}
+
+struct Converter {
+    height: Option<u32>,
+    width: Option<u32>,
+    scaler: Option<Scaler>,
+}
+
+impl Converter {
+    /// Send every frame the decoder has ready. Return `false` when the
+    /// receiver is gone, so that decoding can stop early.
+    fn drain(
+        &mut self,
+        decoder: &mut ffmpeg::decoder::Video,
+        tx: &Sender<Message>,
+    ) -> Result<bool, Error> {
+        let mut decoded = Video::empty();
+        while decoder.receive_frame(&mut decoded).is_ok() {
+            let mut rgb = Video::empty();
+            self.scaler(&decoded)?
+                .run(&decoded, &mut rgb)
+                .map_err(Error::Decode)?;
+            if tx.send(Ok(rgb)).is_err() {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// The scaler for `frame`, rebuilt whenever the input size or pixel
+    /// format changes within the stream.
+    fn scaler(&mut self, frame: &Video) -> Result<&mut Scaler, Error> {
+        let stale = self.scaler.as_ref().is_none_or(|scaler| {
+            let input = scaler.input();
+            (input.format, input.width, input.height)
+                != (frame.format(), frame.width(), frame.height())
+        });
+        if stale {
+            let scaler = Scaler::get(
+                frame.format(),
+                frame.width(),
+                frame.height(),
+                Pixel::RGB24,
+                self.width.unwrap_or(frame.width()),
+                self.height.unwrap_or(frame.height()),
+                Flags::BILINEAR,
+            )
+            .map_err(Error::Decode)?;
+            self.scaler = Some(scaler);
+        }
+        Ok(self.scaler.as_mut().expect("scaler was just set"))
+    }
 }
