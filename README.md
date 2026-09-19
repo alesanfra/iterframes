@@ -27,7 +27,7 @@ Pass `device` to decode on a GPU instead of the CPU, which then stays free
 for your model. The names are PyTorch's:
 
 ```python
-# NVIDIA GPU on Linux; with height and width, the GPU resizes too
+# NVIDIA GPU on Linux and Windows; with height and width, the GPU resizes too
 for frame in iterframes.read("video.mp4", height=224, width=224, device="cuda"):
     ...
 
@@ -67,7 +67,7 @@ pip install iterframes
 ```
 
 The wheels bundle FFmpeg and work on any CPython from 3.11 on, on Linux
-(x86_64, aarch64) and macOS (Apple silicon).
+(x86_64, aarch64), macOS (Apple silicon), and Windows (x86_64).
 
 ## Documentation
 

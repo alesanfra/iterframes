@@ -120,7 +120,7 @@ the code that processes the frames. The names are PyTorch's:
 | Name | Platform | Device |
 | --- | --- | --- |
 | `"mps"` | macOS | VideoToolbox, the media engine of Apple silicon |
-| `"cuda"` | Linux | NVDEC on an NVIDIA GPU, through the driver installed on the machine |
+| `"cuda"` | Linux, Windows | NVDEC on an NVIDIA GPU, through the driver installed on the machine |
 
 `iterframes.DEVICES` lists the names the installed wheel supports, `"cpu"`
 included. Unlike in PyTorch, the device only decodes: the frames reach

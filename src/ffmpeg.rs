@@ -374,7 +374,7 @@ impl Drop for Frame {
 /// Waiting on the CUDA stream that the NVIDIA decoders copy frames on, with
 /// the CUDA driver that FFmpeg itself loads at run time.
 pub mod cuda {
-    use std::ffi::{CStr, c_int, c_void};
+    use std::ffi::{CStr, c_char, c_int, c_void};
     use std::ptr;
     use std::sync::OnceLock;
 
@@ -390,9 +390,10 @@ pub mod cuda {
     }
 
     /// A driver function taking a handle, such as a context or a stream.
-    type WithHandle = unsafe extern "C" fn(*mut c_void) -> c_int;
+    /// The driver API is `__stdcall` on Windows, hence `"system"`.
+    type WithHandle = unsafe extern "system" fn(*mut c_void) -> c_int;
     /// A driver function writing its result through a pointer.
-    type WithOutput<T> = unsafe extern "C" fn(*mut T) -> c_int;
+    type WithOutput<T> = unsafe extern "system" fn(*mut T) -> c_int;
 
     /// The few driver functions needed, all returning a `CUresult`.
     struct Driver {
@@ -409,12 +410,9 @@ pub mod cuda {
                 // SAFETY: the symbols have the signatures of the CUDA driver
                 // API, and the library stays loaded for good.
                 unsafe {
-                    let library = libc::dlopen(c"libcuda.so.1".as_ptr(), libc::RTLD_NOW);
-                    if library.is_null() {
-                        return None;
-                    }
+                    let library = open_driver()?;
                     let symbol = |name: &CStr| {
-                        let symbol = libc::dlsym(library, name.as_ptr());
+                        let symbol = find_symbol(library, name.as_ptr());
                         (!symbol.is_null()).then_some(symbol)
                     };
                     Some(Driver {
@@ -434,6 +432,41 @@ pub mod cuda {
                 }
             })
             .as_ref()
+    }
+
+    #[cfg(unix)]
+    fn open_driver() -> Option<*mut c_void> {
+        // SAFETY: the name is a valid C string.
+        let library = unsafe { libc::dlopen(c"libcuda.so.1".as_ptr(), libc::RTLD_NOW) };
+        (!library.is_null()).then_some(library)
+    }
+
+    #[cfg(unix)]
+    unsafe fn find_symbol(library: *mut c_void, name: *const c_char) -> *mut c_void {
+        // SAFETY: the caller passes a library that `open_driver` returned
+        // and a valid C string.
+        unsafe { libc::dlsym(library, name) }
+    }
+
+    #[cfg(windows)]
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn LoadLibraryA(name: *const c_char) -> *mut c_void;
+        fn GetProcAddress(module: *mut c_void, name: *const c_char) -> *mut c_void;
+    }
+
+    #[cfg(windows)]
+    fn open_driver() -> Option<*mut c_void> {
+        // SAFETY: the name is a valid C string.
+        let library = unsafe { LoadLibraryA(c"nvcuda.dll".as_ptr()) };
+        (!library.is_null()).then_some(library)
+    }
+
+    #[cfg(windows)]
+    unsafe fn find_symbol(library: *mut c_void, name: *const c_char) -> *mut c_void {
+        // SAFETY: the caller passes a library that `open_driver` returned
+        // and a valid C string.
+        unsafe { GetProcAddress(library, name) }
     }
 
     fn check(result: c_int) -> Result<(), Error> {
