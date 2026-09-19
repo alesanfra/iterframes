@@ -136,6 +136,96 @@ def test_frame_buffer(video_path):
     assert len(bytes(view)) == 270 * 470 * 3
 
 
+@pytest.mark.parametrize("batch_size", [1, 12, 901, 1000])
+def test_batches_match_frames(video_path, batch_size):
+    frames = list(iterframes.read(video_path))
+
+    batches = list(iterframes.read_batches(video_path, batch_size))
+
+    # 901 frames: every batch is full but the last.
+    assert [len(batch) for batch in batches[:-1]] == [batch_size] * (
+        len(batches) - 1
+    )
+    assert len(batches[-1]) == 901 - batch_size * (len(batches) - 1)
+    np.testing.assert_array_equal(np.concatenate(batches), np.stack(frames))
+
+
+def test_batch_layout(video_path):
+    batch = next(iterframes.read_batches(video_path, 12))
+
+    assert batch.shape == (12, 270, 480, 3)
+    assert batch.dtype == np.uint8
+    assert batch.flags.c_contiguous
+    assert batch.flags.writeable
+
+
+def test_batches_drop_last(video_path):
+    batches = list(iterframes.read_batches(video_path, 12, drop_last=True))
+
+    assert len(batches) == 901 // 12
+    assert all(batch.shape[0] == 12 for batch in batches)
+
+
+def test_batches_resize(video_path):
+    # 470 * 3 bytes is not a multiple of 32: the rows must stay packed.
+    frames = list(iterframes.read(video_path, height=135, width=470))
+
+    batches = list(
+        iterframes.read_batches(video_path, 12, height=135, width=470)
+    )
+
+    assert batches[0].shape == (12, 135, 470, 3)
+    np.testing.assert_array_equal(np.concatenate(batches), np.stack(frames))
+
+
+@pytest.mark.parametrize("prefetch_frames", [0, 1, 13, 100])
+def test_batches_prefetch_frames(video_path, prefetch_frames):
+    batches = iterframes.read_batches(
+        video_path, 12, prefetch_frames=prefetch_frames
+    )
+
+    assert sum(len(batch) for batch in batches) == 901
+
+
+def test_batches_stop_early(video_path):
+    for _ in range(20):
+        for index, _ in enumerate(iterframes.read_batches(video_path, 12)):
+            if index == 2:
+                break
+
+
+def test_batches_device_auto(video_path):
+    frames = list(iterframes.read(video_path, device="auto"))
+
+    batches = list(iterframes.read_batches(video_path, 12, device="auto"))
+
+    np.testing.assert_array_equal(np.concatenate(batches), np.stack(frames))
+
+
+def test_batch_buffer(video_path):
+    batch = next(iterframes.FrameReader(video_path, batch_size=3))
+    view = memoryview(batch)
+
+    assert isinstance(batch, iterframes.Batch)
+    assert view.shape == (3, 270, 480, 3)
+    assert view.format == "B"
+    assert view.c_contiguous
+    assert len(bytes(view)) == 3 * 270 * 480 * 3
+
+
+@pytest.mark.parametrize("batch_size", [0, -1])
+def test_batch_size_must_be_positive(video_path, batch_size):
+    with pytest.raises(ValueError):
+        next(iterframes.read_batches(video_path, batch_size))
+
+
+def test_batches_not_on_device(video_path):
+    with pytest.raises(ValueError, match="batch_size"):
+        iterframes.FrameReader(
+            video_path, device="cuda", on_device=True, batch_size=2
+        )
+
+
 def test_devices():
     assert iterframes.DEVICES[0] == "cpu"
     assert set(iterframes.DEVICES) <= {"cpu", "mps", "cuda"}

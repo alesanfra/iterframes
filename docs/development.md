@@ -60,10 +60,10 @@ environment. Run it again after every change to a `.rs` file.
 
 | Path | Contents |
 | --- | --- |
-| `src/lib.rs` | Python module: `Frame`, `FrameReader`, and the error mapping |
+| `src/lib.rs` | Python module: `Frame`, `Batch`, `FrameReader`, and the error mapping |
 | `src/decoder.rs` | Decoding thread: demux, decode, convert to RGB |
 | `src/ffmpeg.rs` | Safe wrappers over the FFmpeg calls the crate needs |
-| `iterframes/__init__.py` | `read` and `read_all`, which wrap `FrameReader` |
+| `iterframes/__init__.py` | `read`, `read_all`, and `read_batches`, which wrap `FrameReader` |
 | `scripts/build-ffmpeg.sh` | Static FFmpeg build for the wheels |
 | `tests/` | pytest suite, which checks the frames against PyAV |
 | `docs/` | This site |

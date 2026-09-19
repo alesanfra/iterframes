@@ -46,6 +46,8 @@ pub use sys::AVPixelFormat as PixelFormat;
 pub struct Error(c_int);
 
 impl Error {
+    pub const OUT_OF_MEMORY: Self = Self(sys::AVERROR(libc::ENOMEM));
+
     const EOF: Error = Error(sys::AVERROR_EOF);
     const INVALID_DATA: Error = Error(sys::AVERROR_INVALIDDATA);
 
@@ -108,7 +110,7 @@ impl Input {
                 ptr::null(),
                 ptr::null_mut(),
             ))?;
-            let input = Self(NonNull::new(context).ok_or(Error(sys::AVERROR(libc::ENOMEM)))?);
+            let input = Self(NonNull::new(context).ok_or(Error::OUT_OF_MEMORY)?);
             check(sys::avformat_find_stream_info(
                 input.0.as_ptr(),
                 ptr::null_mut(),
@@ -152,8 +154,8 @@ impl Input {
             if let Some(cuvid) = cuvid {
                 codec = cuvid;
             }
-            let context = NonNull::new(sys::avcodec_alloc_context3(codec))
-                .ok_or(Error(sys::AVERROR(libc::ENOMEM)))?;
+            let context =
+                NonNull::new(sys::avcodec_alloc_context3(codec)).ok_or(Error::OUT_OF_MEMORY)?;
             let decoder = Decoder {
                 context,
                 stream: index as usize,
@@ -562,7 +564,7 @@ impl HwDevice {
         check(unsafe {
             sys::av_hwdevice_ctx_create(&mut device, kind.0, ptr::null(), ptr::null_mut(), 0)
         })?;
-        let device = NonNull::new(device).ok_or(Error(sys::AVERROR(libc::ENOMEM)))?;
+        let device = NonNull::new(device).ok_or(Error::OUT_OF_MEMORY)?;
         Ok(Self { device, kind })
     }
 }
@@ -585,8 +587,8 @@ pub struct Scaler {
 impl Scaler {
     /// A scaler from frames like `frame` to RGB24 frames of the given size.
     pub fn new(frame: &Frame, width: u32, height: u32) -> Result<Self, Error> {
-        let context = NonNull::new(unsafe { sys::sws_alloc_context() })
-            .ok_or(Error(sys::AVERROR(libc::ENOMEM)))?;
+        let context =
+            NonNull::new(unsafe { sys::sws_alloc_context() }).ok_or(Error::OUT_OF_MEMORY)?;
         let scaler = Self {
             context,
             input: (frame.format(), frame.width(), frame.height()),
@@ -624,6 +626,11 @@ impl Scaler {
         Ok(scaler)
     }
 
+    /// The size of the frames it makes, as `(width, height)`.
+    pub fn output(&self) -> (u32, u32) {
+        self.output
+    }
+
     /// Whether `frame` has the size and pixel format this scaler expects.
     pub fn accepts(&self, frame: &Frame) -> bool {
         self.input == (frame.format(), frame.width(), frame.height())
@@ -632,23 +639,61 @@ impl Scaler {
     /// Convert `frame`, which the scaler must accept, to a new RGB24 frame
     /// whose rows follow each other with no padding.
     pub fn run(&mut self, frame: &Frame) -> Result<Frame, Error> {
-        debug_assert!(self.accepts(frame));
+        let rgb = self.output_frame();
+        // SAFETY: the frame is blank but for its size and format.
+        // An alignment of 1 packs the rows, so that Python gets a
+        // contiguous array without copying.
+        check(unsafe { sys::av_frame_get_buffer(rgb.0.as_ptr(), 1) })?;
+        self.scale(frame, &rgb)?;
+        Ok(rgb)
+    }
+
+    /// Convert `frame`, which the scaler must accept, into `buffer` from
+    /// byte `offset` on, as packed RGB24 rows.
+    pub fn run_into(&mut self, frame: &Frame, buffer: &Buffer, offset: usize) -> Result<(), Error> {
+        let (width, height) = (self.output.0 as usize, self.output.1 as usize);
+        let stride = width * 3;
+        assert!(
+            offset + height * stride <= buffer.len(),
+            "the frame does not fit in the buffer"
+        );
+        let rgb = self.output_frame();
+        // SAFETY: the pixels written from data[0] stay within `buffer`, as
+        // checked above, and the new reference keeps it alive until the
+        // frame is freed.
+        unsafe {
+            let output = rgb.0.as_ptr();
+            (*output).buf[0] = sys::av_buffer_ref(buffer.0.as_ptr());
+            if (*output).buf[0].is_null() {
+                return Err(Error::OUT_OF_MEMORY);
+            }
+            (*output).data[0] = buffer.data().add(offset);
+            (*output).linesize[0] = stride as c_int;
+        }
+        self.scale(frame, &rgb)
+    }
+
+    /// A blank RGB24 frame of the output size.
+    fn output_frame(&self) -> Frame {
         let rgb = Frame::new();
-        // SAFETY: `rgb` gets buffers for the output size and format before
-        // sws_scale_frame writes into them; `frame` is a decoded frame of
-        // the input size and format.
+        // SAFETY: plain fields of a frame that owns no buffers yet.
         unsafe {
             let output = rgb.0.as_ptr();
             (*output).format = sys::AVPixelFormat::AV_PIX_FMT_RGB24.0;
             (*output).width = self.output.0 as c_int;
             (*output).height = self.output.1 as c_int;
-            // An alignment of 1 packs the rows, so that Python gets a
-            // contiguous array without copying.
-            check(sys::av_frame_get_buffer(output, 1))?;
-            let input = frame.0.as_ptr();
-            check(sys::sws_scale_frame(self.context.as_ptr(), output, input))?;
         }
-        Ok(rgb)
+        rgb
+    }
+
+    fn scale(&mut self, frame: &Frame, rgb: &Frame) -> Result<(), Error> {
+        debug_assert!(self.accepts(frame));
+        // SAFETY: `rgb` has buffers for the output size and format;
+        // `frame` is a decoded frame of the input size and format.
+        check(unsafe {
+            sys::sws_scale_frame(self.context.as_ptr(), rgb.0.as_ptr(), frame.0.as_ptr())
+        })
+        .map(|_| ())
     }
 }
 
@@ -656,6 +701,45 @@ impl Drop for Scaler {
     fn drop(&mut self) {
         // SAFETY: allocated by sws_getContext.
         unsafe { sys::sws_freeContext(self.context.as_ptr()) };
+    }
+}
+
+/// A reference-counted block of memory, for pixels that FFmpeg writes and
+/// Python reads.
+pub struct Buffer(NonNull<sys::AVBufferRef>);
+
+// SAFETY: the reference count is atomic, and `Buffer` only hands out a
+// pointer whose use is up to the caller.
+unsafe impl Send for Buffer {}
+unsafe impl Sync for Buffer {}
+
+impl Buffer {
+    /// `len` uninitialized bytes, aligned for SIMD.
+    pub fn new(len: usize) -> Result<Self, Error> {
+        // SAFETY: allocation only.
+        NonNull::new(unsafe { sys::av_buffer_alloc(len) })
+            .map(Self)
+            .ok_or(Error::OUT_OF_MEMORY)
+    }
+
+    pub fn len(&self) -> usize {
+        // SAFETY: the reference is valid for as long as `self` lives.
+        unsafe { self.0.as_ref().size }
+    }
+
+    /// Pointer to the first byte. Writing through it is up to the caller,
+    /// who must know nothing else reads the bytes meanwhile.
+    pub fn data(&self) -> *mut u8 {
+        // SAFETY: as in `len`.
+        unsafe { self.0.as_ref().data }
+    }
+}
+
+impl Drop for Buffer {
+    fn drop(&mut self) {
+        let mut buffer = self.0.as_ptr();
+        // SAFETY: allocated by av_buffer_alloc.
+        unsafe { sys::av_buffer_unref(&mut buffer) };
     }
 }
 

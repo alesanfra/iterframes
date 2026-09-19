@@ -12,7 +12,7 @@ mod decoder;
 mod dlpack;
 mod ffmpeg;
 
-use decoder::{CUDA_FORMATS, Decoded, Device, Error, Message};
+use decoder::{Batching, CUDA_FORMATS, Decoded, Device, Error, Message};
 
 impl From<Error> for PyErr {
     fn from(err: Error) -> PyErr {
@@ -70,44 +70,102 @@ impl Frame {
         view: *mut ffi::Py_buffer,
         flags: c_int,
     ) -> PyResult<()> {
-        if view.is_null() {
-            return Err(PyBufferError::new_err("view is null"));
-        }
         let frame = slf.get();
-        let [height, width, channels] = frame.shape;
-        // SAFETY: `view` is non-null and owned by the caller. The pixels
-        // live as long as `frame`, which `view.obj` keeps alive, and nothing
-        // on the Rust side reads or writes them once the frame is wrapped.
-        unsafe {
-            (*view).buf = frame.frame.data(0).cast();
-            (*view).len = height * width * channels;
-            (*view).readonly = 0;
-            (*view).itemsize = 1;
-            (*view).format = if flags & ffi::PyBUF_FORMAT != 0 {
-                c"B".as_ptr().cast_mut()
-            } else {
-                std::ptr::null_mut()
-            };
-            // Without PyBUF_ND the consumer asked for a flat run of bytes,
-            // which the packed rows already are.
-            if flags & ffi::PyBUF_ND != 0 {
-                (*view).ndim = 3;
-                (*view).shape = frame.shape.as_ptr().cast_mut();
-            } else {
-                (*view).ndim = 1;
-                (*view).shape = std::ptr::null_mut();
-            }
-            (*view).strides = if flags & ffi::PyBUF_STRIDES == ffi::PyBUF_STRIDES {
-                frame.strides.as_ptr().cast_mut()
-            } else {
-                std::ptr::null_mut()
-            };
-            (*view).suboffsets = std::ptr::null_mut();
-            (*view).internal = std::ptr::null_mut();
-            (*view).obj = slf.into_any().into_ptr();
-        }
-        Ok(())
+        let (data, shape, strides) = (frame.frame.data(0), &frame.shape, &frame.strides);
+        // SAFETY: the pixels live as long as `frame`, which the view keeps
+        // alive, and nothing on the Rust side reads or writes them once the
+        // frame is wrapped.
+        unsafe { fill_buffer(view, flags, slf.clone().into_any(), data, shape, strides) }
     }
+}
+
+/// Frames of one size decoded into a single buffer, exposed through the
+/// buffer protocol as a writable `(frames, height, width, 3)` array of
+/// bytes, which `numpy.asarray(batch)` wraps without copying.
+#[pyclass(module = "iterframes", frozen)]
+struct Batch {
+    batch: decoder::Batch,
+    shape: [ffi::Py_ssize_t; 4],
+    strides: [ffi::Py_ssize_t; 4],
+}
+
+impl Batch {
+    fn new(batch: decoder::Batch) -> Self {
+        let (height, width) = (batch.height as isize, batch.width as isize);
+        Self {
+            shape: [batch.frames as isize, height, width, 3],
+            strides: [height * width * 3, width * 3, 3, 1],
+            batch,
+        }
+    }
+}
+
+#[pymethods]
+impl Batch {
+    unsafe fn __getbuffer__(
+        slf: Bound<'_, Self>,
+        view: *mut ffi::Py_buffer,
+        flags: c_int,
+    ) -> PyResult<()> {
+        let batch = slf.get();
+        let (data, shape, strides) = (batch.batch.buffer.data(), &batch.shape, &batch.strides);
+        // SAFETY: as for `Frame`: the decoder thread no longer holds the
+        // buffer once it sent the batch.
+        unsafe { fill_buffer(view, flags, slf.clone().into_any(), data, shape, strides) }
+    }
+}
+
+/// Describe the packed bytes at `data` in `view`, as an array of the given
+/// shape that `owner` keeps alive.
+///
+/// # Safety
+///
+/// `view` is null or owned by the caller, and the `shape.iter().product()`
+/// bytes from `data` on stay valid, and are touched by nobody else, for as
+/// long as `owner` lives.
+unsafe fn fill_buffer(
+    view: *mut ffi::Py_buffer,
+    flags: c_int,
+    owner: Bound<'_, PyAny>,
+    data: *mut u8,
+    shape: &[ffi::Py_ssize_t],
+    strides: &[ffi::Py_ssize_t],
+) -> PyResult<()> {
+    if view.is_null() {
+        return Err(PyBufferError::new_err("view is null"));
+    }
+    // SAFETY: `view` is non-null and owned by the caller, and `data` is
+    // valid as the caller promises; `shape` and `strides` live in `owner`,
+    // which the view keeps alive.
+    unsafe {
+        (*view).buf = data.cast();
+        (*view).len = shape.iter().product();
+        (*view).readonly = 0;
+        (*view).itemsize = 1;
+        (*view).format = if flags & ffi::PyBUF_FORMAT != 0 {
+            c"B".as_ptr().cast_mut()
+        } else {
+            std::ptr::null_mut()
+        };
+        // Without PyBUF_ND the consumer asked for a flat run of bytes,
+        // which the packed rows already are.
+        if flags & ffi::PyBUF_ND != 0 {
+            (*view).ndim = shape.len() as c_int;
+            (*view).shape = shape.as_ptr().cast_mut();
+        } else {
+            (*view).ndim = 1;
+            (*view).shape = std::ptr::null_mut();
+        }
+        (*view).strides = if flags & ffi::PyBUF_STRIDES == ffi::PyBUF_STRIDES {
+            strides.as_ptr().cast_mut()
+        } else {
+            std::ptr::null_mut()
+        };
+        (*view).suboffsets = std::ptr::null_mut();
+        (*view).internal = std::ptr::null_mut();
+        (*view).obj = owner.into_ptr();
+    }
+    Ok(())
 }
 
 /// A frame left on the NVIDIA GPU that decoded it, as NV12: a plane of
@@ -267,8 +325,11 @@ impl Plane {
 
 /// Iterator over the frames of a video, decoded on a background thread.
 ///
-/// Each item is a `Frame`, which supports the buffer protocol. Use
-/// `iterframes.read`, which wraps the frames in NumPy arrays.
+/// Each item is a `Frame`, which supports the buffer protocol, or with
+/// `batch_size`, a `Batch` of that many frames (fewer in the last one,
+/// unless `drop_last`), whose `prefetch_frames` rounds up to whole batches.
+/// Use `iterframes.read` and `iterframes.read_batches`, which wrap them in
+/// NumPy arrays.
 #[pyclass(module = "iterframes")]
 struct FrameReader {
     frames: Receiver<Message>,
@@ -278,8 +339,10 @@ struct FrameReader {
 impl FrameReader {
     #[new]
     #[pyo3(signature = (
-        path, height=None, width=None, prefetch_frames=1, device="cpu", on_device=false
+        path, height=None, width=None, prefetch_frames=1, device="cpu", on_device=false,
+        batch_size=None, drop_last=false
     ))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         path: PathBuf,
         height: Option<u32>,
@@ -287,7 +350,19 @@ impl FrameReader {
         prefetch_frames: usize,
         device: &str,
         on_device: bool,
+        batch_size: Option<usize>,
+        drop_last: bool,
     ) -> PyResult<Self> {
+        let batching = match batch_size {
+            None => None,
+            Some(0) => return Err(PyValueError::new_err("batch_size must be at least 1")),
+            Some(_) if on_device => {
+                return Err(PyValueError::new_err(
+                    "batch_size does not work with on_device=True",
+                ));
+            }
+            Some(size) => Some(Batching { size, drop_last }),
+        };
         let device = match device {
             "cpu" => Device::Cpu,
             "auto" => Device::Auto,
@@ -315,7 +390,15 @@ impl FrameReader {
             .into_string()
             .map_err(|path| PyValueError::new_err(format!("path is not valid UTF-8: {path:?}")))?;
         Ok(Self {
-            frames: decoder::start(path, height, width, device, on_device, prefetch_frames),
+            frames: decoder::start(
+                path,
+                height,
+                width,
+                device,
+                on_device,
+                batching,
+                prefetch_frames,
+            ),
         })
     }
 
@@ -331,6 +414,7 @@ impl FrameReader {
         let frame = match message? {
             Decoded::Rgb(frame) => Py::new(py, Frame::new(frame))?.into_any(),
             Decoded::Cuda { frame, gpu } => Py::new(py, CudaFrame::new(frame, gpu))?.into_any(),
+            Decoded::Batch(batch) => Py::new(py, Batch::new(batch))?.into_any(),
         };
         Ok(Some(frame))
     }
@@ -357,7 +441,7 @@ mod iterframes {
     use super::*;
 
     #[pymodule_export]
-    use super::{CudaFrame, Frame, FrameReader, Plane};
+    use super::{Batch, CudaFrame, Frame, FrameReader, Plane};
 
     #[pymodule_init]
     fn init(module: &Bound<'_, PyModule>) -> PyResult<()> {

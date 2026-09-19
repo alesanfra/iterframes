@@ -19,6 +19,10 @@ for frame in iterframes.read("video.mp4"):
 # Resize while decoding
 for frame in iterframes.read("video.mp4", height=224, width=224):
     ...
+
+# Batches of 12 frames, decoded into one (12, 224, 224, 3) array
+for batch in iterframes.read_batches("video.mp4", 12, height=224, width=224):
+    ...
 ```
 
 ### Hardware decoding
