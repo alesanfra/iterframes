@@ -30,8 +30,9 @@ one wheel per platform, which works on every CPython from 3.11 on:
 | Linux (glibc 2.28 or later) | x86_64, aarch64 |
 | macOS 11 or later | arm64 (Apple silicon) |
 
-On other platforms pip builds from source, which requires a Rust toolchain
-and the FFmpeg development libraries; see [Development](development.md).
+On other platforms pip builds from source, FFmpeg included, which takes a
+few minutes and requires a Rust toolchain and a C toolchain; see
+[Development](development.md).
 
 ## Quick start
 

@@ -48,8 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI lints Rust and Python, tests every wheel, and publishes to PyPI
   through trusted publishing
 - Updated to PyO3 0.29 and Rust edition 2024
-- `ffmpeg-next` is replaced by a thin wrapper over the raw bindings of
-  `ffmpeg-sys-next`
+- `ffmpeg-next` and `ffmpeg-sys-next` are replaced by `build.rs`, which
+  builds the static FFmpeg, links it, and generates its bindings, so that
+  `maturin build` needs no FFmpeg installed and no environment variables.
+  The system FFmpeg is no longer used, and the `static` feature is gone
 
 ## [0.2.0] - 2021-01-01
 

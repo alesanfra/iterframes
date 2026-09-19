@@ -2,7 +2,7 @@
 name = "iterframes"
 version = "0.4.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.89"
 description = "Iterate over the frames of a video as NumPy arrays, decoded on a background thread while you process them"
 homepage = "https://github.com/alesanfra/iterframes"
 repository = "https://github.com/alesanfra/iterframes"
@@ -13,21 +13,16 @@ publish = false
 name = "iterframes"
 crate-type = ["cdylib"]
 
-[features]
-# Link FFmpeg statically. The wheels use it with the build from
-# scripts/build-ffmpeg.sh; without it FFmpeg is linked dynamically.
-static = ["ffmpeg-sys-next/static"]
-
 [dependencies]
 # One wheel per platform for every CPython from 3.11 on.
 pyo3 = { version = "0.29", features = ["abi3-py311"] }
 crossbeam-channel = "0.5"
 libc = "0.2"
 
-[dependencies.ffmpeg-sys-next]
-version = "9.0"
-default-features = false
-features = ["avcodec", "avformat", "swscale"]
+[build-dependencies]
+# build.rs builds the static FFmpeg, links it, and generates its bindings.
+bindgen = { version = "0.72", default-features = false, features = ["runtime"] }
+pkg-config = "0.3"
 
 [profile.release]
 lto = true

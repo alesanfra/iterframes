@@ -1,6 +1,7 @@
 # Wheel build matrix adapted from `maturin generate-ci github`. Every wheel
-# links a static FFmpeg built by scripts/build-ffmpeg.sh, and is abi3, so a
-# single wheel per platform covers every CPython from 3.11 on. Edit by hand.
+# links a static FFmpeg, which build.rs builds with scripts/build-ffmpeg.sh
+# into build/ffmpeg, and is abi3, so a single wheel per platform covers
+# every CPython from 3.11 on. Edit by hand.
 name: CI
 
 on:
@@ -22,14 +23,18 @@ jobs:
       - uses: actions/checkout@v7
       - name: Install uv
         uses: astral-sh/setup-uv@v10.1.0
-      - name: Install FFmpeg headers
-        # Clippy compiles the FFmpeg bindings, which need the system headers
-        # and libclang; linking against the distribution's FFmpeg is enough.
+      - name: Install build tools
+        # Clippy runs build.rs, which builds FFmpeg and generates its
+        # bindings with libclang.
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
-            libclang-dev pkg-config
+            libclang-dev nasm pkg-config
+      - name: Cache FFmpeg
+        uses: actions/cache@v6
+        with:
+          path: build/ffmpeg
+          key: ffmpeg-lint-${{ hashFiles('scripts/build-ffmpeg.sh') }}
       - name: Check Rust formatting
         run: cargo fmt --check
       - name: Lint Rust
@@ -61,16 +66,11 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist --features static
+          args: --release --out dist
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           manylinux: 2_28
-          # Runs in the same shell as maturin, inside the container, so the
-          # export reaches the build. maturin-action does not forward
-          # PKG_CONFIG_PATH from the job environment.
-          before-script-linux: |
-            dnf install -y clang-devel
-            scripts/build-ffmpeg.sh
-            export PKG_CONFIG_PATH=$PWD/build/ffmpeg/lib/pkgconfig
+          # libclang, for the bindings build.rs generates.
+          before-script-linux: dnf install -y clang-devel
       - name: Upload wheels
         uses: actions/upload-artifact@v7
         with:
@@ -106,16 +106,13 @@ jobs:
         with:
           path: build/ffmpeg
           key: ffmpeg-macos-${{ matrix.platform.target }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
-      - name: Build FFmpeg
-        run: |
-          command -v pkg-config || brew install pkgconf
-          scripts/build-ffmpeg.sh
-          echo "PKG_CONFIG_PATH=$PWD/build/ffmpeg/lib/pkgconfig" >> "$GITHUB_ENV"
+      - name: Install pkg-config
+        run: command -v pkg-config || brew install pkgconf
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist --features static
+          args: --release --out dist
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
       - name: Upload wheels
         uses: actions/upload-artifact@v7

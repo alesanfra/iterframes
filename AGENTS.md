@@ -6,8 +6,8 @@ Working notes for coding agents (and humans) touching this repository.
 
 `iterframes` is a Python extension module written in Rust with
 [PyO3](https://pyo3.rs/) and built by [maturin](https://www.maturin.rs/).
-It decodes videos with FFmpeg, through the raw bindings of `ffmpeg-sys-next`
-wrapped in `src/ffmpeg.rs`, and yields
+It decodes videos with a static FFmpeg, through bindings that `build.rs`
+generates and `src/ffmpeg.rs` wraps, and yields
 the frames as NumPy arrays of RGB pixels.
 
 The point of the project is a plain Python loop over the frames in which
@@ -43,19 +43,22 @@ as `iterframes.iterframes`, and `iterframes/__init__.py` wraps its
 
 ## FFmpeg
 
-- Wheels link a static FFmpeg built by `scripts/build-ffmpeg.sh` into
-  `build/ffmpeg`, via the crate feature `static` and `PKG_CONFIG_PATH`.
-  The build disables autodetection, so the wheel depends on libc and
+- Every build, local or CI, links the static FFmpeg that `build.rs`
+  builds with `scripts/build-ffmpeg.sh` into `build/ffmpeg` (or
+  `$ITERFRAMES_FFMPEG_DIR`) the first time, under a file lock, logging to
+  `build/ffmpeg.log`. The script is a no-op when `VERSION` in that
+  directory matches what it would build. There is no system FFmpeg mode.
+- `build.rs` links the libraries through `pkg-config --static` and runs
+  bindgen on the headers, keeping only `av*_`/`sws_` items. Enums are
+  newtype structs: use `.0` for the raw value. Function-like macros such
+  as `AVERROR` are written by hand in the `sys` module of `src/ffmpeg.rs`.
+- The build disables autodetection, so the wheel depends on libc and
   system frameworks only; dav1d is added for AV1.
-- Local development may link the system FFmpeg dynamically instead
-  (default features).
-- Cargo does not track the FFmpeg libraries: after changing them, run
-  `cargo clean -p ffmpeg-sys-next`.
 - Keep the build LGPL: never pass `--enable-gpl` or `--enable-nonfree`.
 - Hardware decoding: VideoToolbox on macOS; on Linux the `*_cuvid`
   decoders, which load the NVIDIA driver with dlopen and resize on the
-  GPU. Both add no library to the wheel. The static macOS build needs
-  clang's compiler-rt for `@available`, which `build.rs` links.
+  GPU. Both add no library to the wheel. The macOS build needs clang's
+  compiler-rt for `@available`, which `build.rs` links.
 - NVDEC has never run on a GPU in this project: CI has none, and the
   `cuda` tests skip when the device does not open.
 
@@ -67,26 +70,21 @@ as `iterframes.iterframes`, and `iterframes/__init__.py` wraps its
 | `src/decoder.rs` | Decoding thread |
 | `src/ffmpeg.rs` | Safe wrappers over the FFmpeg calls the crate needs |
 | `iterframes/__init__.py` | `read`, `read_all` |
-| `scripts/build-ffmpeg.sh` | Static FFmpeg and dav1d for the wheels |
+| `build.rs` | Builds and links FFmpeg, generates its bindings |
+| `scripts/build-ffmpeg.sh` | Static FFmpeg and dav1d, run by `build.rs` |
 | `tests/` | pytest suite; frames are compared with PyAV |
 | `docs/` | MkDocs site published on Read the Docs |
 
 ## Environment
 
-Requires [uv](https://docs.astral.sh/uv/), a Rust toolchain, `pkg-config`,
-and FFmpeg (see `docs/development.md`).
+Requires [uv](https://docs.astral.sh/uv/), a Rust toolchain, and what
+FFmpeg needs to build: a C compiler, `make`, `curl`, `python3`,
+`pkg-config`, libclang (see `docs/development.md`).
 
 ```bash
 uv venv -p 3.14                # once
 uv sync --frozen               # dev dependencies
-uv run maturin develop --uv    # compile the extension into the venv
-```
-
-With the static FFmpeg:
-
-```bash
-scripts/build-ffmpeg.sh
-PKG_CONFIG_PATH=$PWD/build/ffmpeg/lib/pkgconfig uv run maturin develop --uv --features static
+uv run maturin develop --uv    # build FFmpeg (first time) and the extension
 ```
 
 **`uv run` re-syncs the project by default and overwrites the module that

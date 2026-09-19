@@ -1,47 +1,27 @@
 # Development
 
 You need [uv](https://docs.astral.sh/uv/), a Rust toolchain from
-[rustup](https://rustup.rs/), `pkg-config`, and FFmpeg. Only Linux and
+[rustup](https://rustup.rs/), and the tools to build FFmpeg: a C compiler,
+`make`, `curl`, `python3`, `pkg-config`, and libclang. Only Linux and
 macOS are supported.
+
+```console
+xcode-select --install && brew install pkg-config        # macOS
+sudo apt install build-essential curl python3-venv \
+    pkg-config libclang-dev nasm                          # Debian, Ubuntu
+```
 
 ## FFmpeg
 
-The Rust bindings generate their code from the FFmpeg headers with
-libclang, and work with any recent FFmpeg (7.1 and 9.0 are tested). There
-are two ways to provide it.
+The extension always links the same static FFmpeg as the wheels, and
+`build.rs` builds it: the first build downloads FFmpeg and dav1d and
+compiles them into `build/ffmpeg`, which takes a few minutes. Later builds
+reuse it, and so does anything else that runs `build.rs`, such as
+`cargo clippy` or rust-analyzer. The log is in `build/ffmpeg.log`.
 
-### System FFmpeg
-
-The quickest option for day-to-day work. The extension links dynamically
-against the FFmpeg of your system:
-
-```console
-brew install ffmpeg pkg-config                    # macOS
-sudo apt install libavcodec-dev libavformat-dev \
-    libavutil-dev libswscale-dev libclang-dev pkg-config   # Debian, Ubuntu
-```
-
-### Static FFmpeg, as in the wheels
-
-`scripts/build-ffmpeg.sh` downloads FFmpeg and dav1d and builds them as
-static libraries in `build/ffmpeg`. This is what the published wheels
-link, so use it to reproduce a wheel or a bug that only shows up there.
-It takes a few minutes and needs `curl`, `make`, a C compiler, and
-`python3`:
-
-```console
-scripts/build-ffmpeg.sh
-export PKG_CONFIG_PATH=$PWD/build/ffmpeg/lib/pkgconfig
-```
-
-Then add `--features static` to the `maturin` commands below. The script
-does nothing when `build/ffmpeg` is up to date; to change FFmpeg's version
-or options, edit the script.
-
-!!! note "Switching FFmpeg"
-    Cargo does not notice when the FFmpeg libraries change. After
-    switching between the system and the static FFmpeg, or rebuilding the
-    latter, run `cargo clean -p ffmpeg-sys-next`.
+The versions and options live in `scripts/build-ffmpeg.sh`; after editing
+it, the next build rebuilds FFmpeg. Set `ITERFRAMES_FFMPEG_DIR` to keep
+the build somewhere else, for instance to share it between checkouts.
 
 ## Setup
 
@@ -114,11 +94,10 @@ compiling the extension.
 ## Wheels
 
 The wheels use the stable ABI of CPython (abi3), so one wheel per platform
-covers every CPython from 3.11 on. To build one locally, with the static
-FFmpeg from above:
+covers every CPython from 3.11 on. To build one locally:
 
 ```console
-uv run --no-sync maturin build --release --features static
+uv run --no-sync maturin build --release
 ```
 
 On Linux, run the build in a

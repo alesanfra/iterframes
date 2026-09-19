@@ -8,13 +8,10 @@
 #
 # Usage: scripts/build-ffmpeg.sh [PREFIX]    (default: build/ffmpeg)
 #
-# Then build with:
-#   PKG_CONFIG_PATH=$PWD/build/ffmpeg/lib/pkgconfig \
-#     maturin build --release --features static
-#
-# The script is idempotent: it does nothing when PREFIX already holds the
-# same versions for the same platform. CI caches PREFIX keyed on the hash
-# of this file, so bump a version here to rebuild.
+# build.rs runs it on every build, so there is rarely a reason to run it by
+# hand. It is idempotent: it does nothing when PREFIX already holds a build
+# made by this very script (versions, options, and platform) and rebuilds
+# after any edit. CI caches PREFIX keyed on the hash of this file.
 set -euo pipefail
 
 FFMPEG_VERSION="${FFMPEG_VERSION:-9.0.2}"
@@ -27,7 +24,7 @@ PREFIX="${1:-$ROOT/build/ffmpeg}"
 mkdir -p "$PREFIX"
 PREFIX="$(cd "$PREFIX" && pwd)"
 JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
-BUILD_ID="ffmpeg $FFMPEG_VERSION dav1d $DAV1D_VERSION nv-codec-headers $NV_CODEC_HEADERS_VERSION $(uname -sm)"
+BUILD_ID="ffmpeg $FFMPEG_VERSION dav1d $DAV1D_VERSION $(uname -sm) script $(cksum < "$0" | cut -d' ' -f1)"
 
 if [[ "$(cat "$PREFIX/VERSION" 2>/dev/null)" == "$BUILD_ID" ]]; then
     echo "$BUILD_ID already built in $PREFIX"
