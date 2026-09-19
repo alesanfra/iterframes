@@ -21,6 +21,31 @@ for frame in iterframes.read("video.mp4", height=224, width=224):
     ...
 ```
 
+### Hardware decoding
+
+Pass `device` to decode on a GPU instead of the CPU, which then stays free
+for your model. The names are PyTorch's:
+
+```python
+# NVIDIA GPU on Linux; with height and width, the GPU resizes too
+for frame in iterframes.read("video.mp4", height=224, width=224, device="cuda"):
+    ...
+
+# Apple silicon (VideoToolbox)
+for frame in iterframes.read("video.mp4", device="mps"):
+    ...
+
+# Whatever the machine has, else the CPU
+for frame in iterframes.read("video.mp4", device="auto"):
+    ...
+
+print(iterframes.DEVICES)  # ('cpu', 'mps') on a Mac
+```
+
+The frames still arrive as NumPy arrays in memory. A GPU saves CPU time
+but is not always faster than the CPU decoder, so measure both; see
+[Hardware decoding](docs/reference.md#hardware-decoding).
+
 ## Installation
 
 ```console
