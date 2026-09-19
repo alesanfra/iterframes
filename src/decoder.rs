@@ -9,19 +9,19 @@ pub enum Error {
     Open(String, ffmpeg::Error),
     /// The file was opened, but decoding failed half way.
     Decode(ffmpeg::Error),
-    /// The hardware decoder asked for by name cannot be used.
-    Hardware(DeviceType, ffmpeg::Error),
+    /// The device asked for by name, such as `"cuda"`, cannot be opened.
+    Device(&'static str, ffmpeg::Error),
 }
 
 /// Where to decode.
 #[derive(Clone, Copy)]
-pub enum Hwaccel {
-    /// On the CPU.
-    None,
+pub enum Device {
+    Cpu,
     /// On the first hardware device that opens, else on the CPU.
     Auto,
-    /// On a device of this kind; failing to open one is an error.
-    Device(DeviceType),
+    /// On a device of this kind, called `name` in Python; failing to open
+    /// one is an error.
+    Hardware(DeviceType, &'static str),
 }
 
 pub type Message = Result<Frame, Error>;
@@ -33,12 +33,12 @@ pub fn start(
     path: String,
     height: Option<u32>,
     width: Option<u32>,
-    hwaccel: Hwaccel,
+    device: Device,
     prefetch: usize,
 ) -> Receiver<Message> {
     let (tx, rx) = bounded(prefetch);
     thread::spawn(move || {
-        if let Err(err) = decode(&path, height, width, hwaccel, &tx) {
+        if let Err(err) = decode(&path, height, width, device, &tx) {
             // Nobody is listening once the reader has been dropped.
             let _ = tx.send(Err(err));
         }
@@ -50,18 +50,18 @@ fn decode(
     path: &str,
     height: Option<u32>,
     width: Option<u32>,
-    hwaccel: Hwaccel,
+    device: Device,
     tx: &Sender<Message>,
 ) -> Result<(), Error> {
     let open = |err| Error::Open(path.to_owned(), err);
     let mut input = Input::open(path).map_err(open)?;
-    let device = match hwaccel {
-        Hwaccel::None => None,
-        Hwaccel::Auto => DeviceType::all()
+    let device = match device {
+        Device::Cpu => None,
+        Device::Auto => DeviceType::all()
             .into_iter()
             .find_map(|kind| HwDevice::new(kind).ok()),
-        Hwaccel::Device(kind) => {
-            Some(HwDevice::new(kind).map_err(|err| Error::Hardware(kind, err))?)
+        Device::Hardware(kind, name) => {
+            Some(HwDevice::new(kind).map_err(|err| Error::Device(name, err))?)
         }
     };
     let mut decoder = input

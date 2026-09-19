@@ -55,7 +55,9 @@ as `iterframes.iterframes`, and `iterframes/__init__.py` wraps its
 - The build disables autodetection, so the wheel depends on libc and
   system frameworks only; dav1d is added for AV1.
 - Keep the build LGPL: never pass `--enable-gpl` or `--enable-nonfree`.
-- Hardware decoding: VideoToolbox on macOS; on Linux the `*_cuvid`
+- Hardware decoding (`device="mps"` / `"cuda"`, PyTorch's names, mapped
+  to FFmpeg's in `hardware_devices` in `src/lib.rs`): VideoToolbox on
+  macOS; on Linux the `*_cuvid`
   decoders, which load the NVIDIA driver with dlopen and resize on the
   GPU. Both add no library to the wheel. The macOS build needs clang's
   compiler-rt for `@available`, which `build.rs` links.

@@ -5,11 +5,12 @@ use crossbeam_channel::Receiver;
 use pyo3::exceptions::{PyBufferError, PyOSError, PyRuntimeError, PyValueError};
 use pyo3::ffi;
 use pyo3::prelude::*;
+use pyo3::types::PyTuple;
 
 mod decoder;
 mod ffmpeg;
 
-use decoder::{Error, Hwaccel, Message};
+use decoder::{Device, Error, Message};
 
 impl From<Error> for PyErr {
     fn from(err: Error) -> PyErr {
@@ -22,10 +23,9 @@ impl From<Error> for PyErr {
                 PyValueError::new_err(format!("cannot read video {path:?}: {err}"))
             }
             Error::Decode(err) => PyRuntimeError::new_err(format!("decoding failed: {err}")),
-            Error::Hardware(kind, err) => PyRuntimeError::new_err(format!(
-                "cannot use hardware decoder {:?}: {err}",
-                kind.name()
-            )),
+            Error::Device(name, err) => {
+                PyRuntimeError::new_err(format!("cannot open device {name:?}: {err}"))
+            }
         }
     }
 }
@@ -112,30 +112,37 @@ struct FrameReader {
 #[pymethods]
 impl FrameReader {
     #[new]
-    #[pyo3(signature = (path, height=None, width=None, prefetch_frames=1, hwaccel=None))]
+    #[pyo3(signature = (path, height=None, width=None, prefetch_frames=1, device="cpu"))]
     fn new(
         path: PathBuf,
         height: Option<u32>,
         width: Option<u32>,
         prefetch_frames: usize,
-        hwaccel: Option<&str>,
+        device: &str,
     ) -> PyResult<Self> {
-        let hwaccel = match hwaccel {
-            None => Hwaccel::None,
-            Some("auto") => Hwaccel::Auto,
-            Some(name) => Hwaccel::Device(ffmpeg::DeviceType::by_name(name).ok_or_else(|| {
-                PyValueError::new_err(format!(
-                    "unknown hardware decoder {name:?}; this build has: {}",
-                    hardware_decoders().join(", ")
-                ))
-            })?),
+        let device = match device {
+            "cpu" => Device::Cpu,
+            "auto" => Device::Auto,
+            name => hardware_devices()
+                .find(|(ours, _)| *ours == name)
+                .map(|(ours, kind)| Device::Hardware(kind, ours))
+                .ok_or_else(|| {
+                    let problem = match name {
+                        "mps" | "cuda" => "is not available on this platform",
+                        _ => "is unknown",
+                    };
+                    PyValueError::new_err(format!(
+                        "device {name:?} {problem}; use \"auto\" or one of {}",
+                        devices().join(", ")
+                    ))
+                })?,
         };
         let path = path
             .into_os_string()
             .into_string()
             .map_err(|path| PyValueError::new_err(format!("path is not valid UTF-8: {path:?}")))?;
         Ok(Self {
-            frames: decoder::start(path, height, width, hwaccel, prefetch_frames),
+            frames: decoder::start(path, height, width, device, prefetch_frames),
         })
     }
 
@@ -152,11 +159,18 @@ impl FrameReader {
     }
 }
 
-/// Names of the hardware decoders this build of FFmpeg includes.
-fn hardware_decoders() -> Vec<&'static str> {
-    ffmpeg::DeviceType::all()
+/// The hardware devices of this build, by the names PyTorch gives them,
+/// which Python users know better than FFmpeg's.
+fn hardware_devices() -> impl Iterator<Item = (&'static str, ffmpeg::DeviceType)> {
+    [("mps", "videotoolbox"), ("cuda", "cuda")]
         .into_iter()
-        .map(ffmpeg::DeviceType::name)
+        .filter_map(|(ours, ffmpeg)| Some((ours, ffmpeg::DeviceType::by_name(ffmpeg)?)))
+}
+
+/// The values `device` accepts besides `"auto"`.
+fn devices() -> Vec<&'static str> {
+    std::iter::once("cpu")
+        .chain(hardware_devices().map(|(name, _)| name))
         .collect()
 }
 
@@ -172,7 +186,7 @@ mod iterframes {
     fn init(module: &Bound<'_, PyModule>) -> PyResult<()> {
         module.add("__version__", env!("CARGO_PKG_VERSION"))?;
         module.add("FFMPEG_VERSION", ffmpeg::version())?;
-        module.add("HWACCELS", hardware_decoders())?;
+        module.add("DEVICES", PyTuple::new(module.py(), devices())?)?;
         ffmpeg::init();
         Ok(())
     }

@@ -136,33 +136,34 @@ def test_frame_buffer(video_path):
     assert len(bytes(view)) == 270 * 470 * 3
 
 
-def test_hwaccels_lists_names():
-    assert all(isinstance(name, str) for name in iterframes.HWACCELS)
+def test_devices():
+    assert iterframes.DEVICES[0] == "cpu"
+    assert set(iterframes.DEVICES) <= {"cpu", "mps", "cuda"}
 
 
-def test_unknown_hwaccel(video_path):
-    with pytest.raises(ValueError, match="unknown hardware decoder"):
-        next(iterframes.read(video_path, hwaccel="nope"))
+def test_unknown_device(video_path):
+    with pytest.raises(ValueError, match="is unknown"):
+        next(iterframes.read(video_path, device="nope"))
 
 
-def test_hwaccel_auto_falls_back(video_path, pyav_frames):
+def test_device_auto_falls_back(video_path, pyav_frames):
     # Decodes on a device when there is one, on the CPU otherwise.
-    frames = iterframes.read_all(video_path, hwaccel="auto")
+    frames = iterframes.read_all(video_path, device="auto")
 
     assert len(frames) == len(pyav_frames)
     for frame, expected in zip(frames, pyav_frames):
         assert_close(frame, expected)
 
 
-@pytest.mark.parametrize("hwaccel", iterframes.HWACCELS)
+@pytest.mark.parametrize("device", iterframes.DEVICES[1:])
 @pytest.mark.parametrize("size", [None, (135, 240)])
-def test_hwaccel(video_path, hwaccel, size):
+def test_hardware_device(video_path, device, size):
     height, width = size or (None, None)
     expected = decode_with_pyav(video_path, height, width)
     try:
-        frames = iterframes.read_all(video_path, height, width, hwaccel)
+        frames = iterframes.read_all(video_path, height, width, device)
     except RuntimeError as error:
-        pytest.skip(f"no {hwaccel} device: {error}")
+        pytest.skip(f"no {device} device: {error}")
 
     assert len(frames) == len(expected)
     for frame, reference in zip(frames, expected):

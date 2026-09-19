@@ -5,7 +5,7 @@ Everything lives in the top-level `iterframes` module.
 ## read
 
 ```python
-read(path, height=None, width=None, prefetch_frames=1, hwaccel=None) -> Iterator[numpy.ndarray]
+read(path, height=None, width=None, prefetch_frames=1, device="cpu") -> Iterator[numpy.ndarray]
 ```
 
 Yields the frames of the video at `path`, in order. Each frame is a
@@ -18,7 +18,7 @@ dtype `uint8`, holding RGB pixels.
 | `height` | Height of the frames. Defaults to the height of the video |
 | `width` | Width of the frames. Defaults to the width of the video |
 | `prefetch_frames` | How many decoded frames may wait for your code. Defaults to 1 |
-| `hwaccel` | Decode on a hardware device: `"auto"` or a name from `HWACCELS`. Defaults to `None`, the CPU. See [Hardware decoding](#hardware-decoding) |
+| `device` | Where to decode: `"cpu"`, `"auto"`, or a name from `DEVICES`. Defaults to `"cpu"`. See [Hardware decoding](#hardware-decoding) |
 
 Frames are resized with bilinear interpolation. When only one of `height`
 and `width` is given, the other keeps the size of the video, so the aspect
@@ -44,7 +44,7 @@ for frame in iterframes.read("video.mp4", height=270, width=480):
 ## read_all
 
 ```python
-read_all(path, height=None, width=None, hwaccel=None) -> list[numpy.ndarray]
+read_all(path, height=None, width=None, device="cpu") -> list[numpy.ndarray]
 ```
 
 Returns every frame of the video in a list. It takes the same arguments as
@@ -113,18 +113,20 @@ The pixels stay alive as long as the frame or any array or view on it.
 
 ## Hardware decoding
 
-`hwaccel` moves decoding to a hardware device, which leaves more CPU to
-the code that processes the frames:
+`device` moves decoding to a hardware device, which leaves more CPU to
+the code that processes the frames. The names are PyTorch's:
 
 | Name | Platform | Device |
 | --- | --- | --- |
-| `"videotoolbox"` | macOS | VideoToolbox, the media engine of Apple silicon |
+| `"mps"` | macOS | VideoToolbox, the media engine of Apple silicon |
 | `"cuda"` | Linux | NVDEC on an NVIDIA GPU, through the driver installed on the machine |
 
-`iterframes.HWACCELS` lists the names the installed wheel supports.
+`iterframes.DEVICES` lists the names the installed wheel supports, `"cpu"`
+included. Unlike in PyTorch, the device only decodes: the frames always
+reach your code as NumPy arrays in memory.
 
 ```python
-for frame in iterframes.read("video.mp4", hwaccel="auto"):
+for frame in iterframes.read("video.mp4", device="auto"):
     ...
 ```
 
@@ -150,4 +152,4 @@ videos and machine. NVDEC support has not been measured yet.
 | --- | --- |
 | `__version__` | Version of iterframes, such as `"0.4.0"` |
 | `FFMPEG_VERSION` | Version of the FFmpeg that iterframes is linked to, such as `"9.0.2"` |
-| `HWACCELS` | Names accepted by `hwaccel`, such as `["videotoolbox"]` |
+| `DEVICES` | Names accepted by `device` besides `"auto"`, such as `("cpu", "mps")` |

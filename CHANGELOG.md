@@ -28,8 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ValueError` when it is not a video, `RuntimeError` when decoding fails
 - `read` accepts `os.PathLike` paths
 - `FFMPEG_VERSION`, the version of the linked FFmpeg
-- Hardware decoding with `hwaccel`: VideoToolbox on macOS, NVDEC on Linux,
-  which also resizes on the GPU. `HWACCELS` lists the devices of the build
+- Hardware decoding with `device`, named as in PyTorch: `"mps"` for
+  VideoToolbox on macOS, `"cuda"` for NVDEC on Linux, which also resizes
+  on the GPU, or `"auto"`. `DEVICES` lists the devices of the build
 - Documentation site on Read the Docs
 
 ### Changed

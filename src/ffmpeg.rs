@@ -75,7 +75,7 @@ fn check(code: c_int) -> Result<c_int, Error> {
 
 /// Keep FFmpeg quiet: errors reach Python as exceptions, and the ones it
 /// logs are either repeated there or expected, such as a missing NVIDIA
-/// driver while `hwaccel="auto"` probes for a device.
+/// driver while `device="auto"` probes for a device.
 pub fn init() {
     // SAFETY: plain setter of a global.
     unsafe { sys::av_log_set_level(sys::AV_LOG_QUIET) };
