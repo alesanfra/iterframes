@@ -42,9 +42,23 @@ for frame in iterframes.read("video.mp4", device="auto"):
 print(iterframes.DEVICES)  # ('cpu', 'mps') on a Mac
 ```
 
-The frames still arrive as NumPy arrays in memory. A GPU saves CPU time
-but is not always faster than the CPU decoder, so measure both; see
-[Hardware decoding](docs/reference.md#hardware-decoding).
+By default the frames still arrive as NumPy arrays in memory. A GPU saves
+CPU time but is not always faster than the CPU decoder, so measure both;
+see [Hardware decoding](docs/reference.md#hardware-decoding).
+
+With an NVIDIA GPU, `on_device=True` keeps the frames on it, in NV12, for
+PyTorch and other libraries to take without a copy:
+
+```python
+import torch
+
+for frame in iterframes.read("video.mp4", device="cuda", on_device=True):
+    y = torch.from_dlpack(frame.y)    # (height, width) uint8, on the GPU
+    uv = torch.from_dlpack(frame.uv)  # (height / 2, width / 2, 2)
+```
+
+[Frames on the GPU](docs/reference.md#frames-on-the-gpu) shows how to
+convert them to RGB there.
 
 ## Installation
 

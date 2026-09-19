@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hardware decoding with `device`, named as in PyTorch: `"mps"` for
   VideoToolbox on macOS, `"cuda"` for NVDEC on Linux, which also resizes
   on the GPU, or `"auto"`. `DEVICES` lists the devices of the build
+- `on_device=True`, with `device="cuda"`, leaves the frames on the GPU as
+  `CudaFrame` objects in NV12, whose planes support DLPack
 - Documentation site on Read the Docs
 
 ### Changed

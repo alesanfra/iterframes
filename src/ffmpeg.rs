@@ -36,7 +36,10 @@ mod sys {
 
     pub const AVERROR_EOF: c_int = tag(b"EOF ");
     pub const AVERROR_INVALIDDATA: c_int = tag(b"INDA");
+    pub const AVERROR_EXTERNAL: c_int = tag(b"EXT ");
 }
+
+pub use sys::AVPixelFormat as PixelFormat;
 
 /// An FFmpeg error code, always negative.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -338,6 +341,16 @@ impl Frame {
         Ok(frame)
     }
 
+    /// How the pixels of a hardware frame are laid out on the device, such
+    /// as NV12, or `None` for a frame in memory.
+    pub fn hardware_format(&self) -> Option<sys::AVPixelFormat> {
+        let frames = self.get().hw_frames_ctx;
+        // SAFETY: the hw_frames_ctx of a frame references an
+        // AVHWFramesContext.
+        (!frames.is_null())
+            .then(|| unsafe { (*(*frames).data.cast::<sys::AVHWFramesContext>()).sw_format })
+    }
+
     /// Bytes from the start of one row of `plane` to the next.
     pub fn stride(&self, plane: usize) -> usize {
         self.get().linesize[plane] as usize
@@ -355,6 +368,103 @@ impl Drop for Frame {
         let mut frame = self.0.as_ptr();
         // SAFETY: allocated by av_frame_alloc.
         unsafe { sys::av_frame_free(&mut frame) };
+    }
+}
+
+/// Waiting on the CUDA stream that the NVIDIA decoders copy frames on, with
+/// the CUDA driver that FFmpeg itself loads at run time.
+pub mod cuda {
+    use std::ffi::{CStr, c_int, c_void};
+    use std::ptr;
+    use std::sync::OnceLock;
+
+    use super::{Error, Frame, sys};
+
+    /// `AVCUDADeviceContext` from `libavutil/hwcontext_cuda.h`, which
+    /// bindgen cannot read without CUDA's own headers.
+    #[repr(C)]
+    struct DeviceContext {
+        context: *mut c_void,
+        stream: *mut c_void,
+        internal: *mut c_void,
+    }
+
+    /// A driver function taking a handle, such as a context or a stream.
+    type WithHandle = unsafe extern "C" fn(*mut c_void) -> c_int;
+    /// A driver function writing its result through a pointer.
+    type WithOutput<T> = unsafe extern "C" fn(*mut T) -> c_int;
+
+    /// The few driver functions needed, all returning a `CUresult`.
+    struct Driver {
+        push_context: WithHandle,
+        pop_context: WithOutput<*mut c_void>,
+        synchronize: WithHandle,
+        device: WithOutput<c_int>,
+    }
+
+    fn driver() -> Option<&'static Driver> {
+        static DRIVER: OnceLock<Option<Driver>> = OnceLock::new();
+        DRIVER
+            .get_or_init(|| {
+                // SAFETY: the symbols have the signatures of the CUDA driver
+                // API, and the library stays loaded for good.
+                unsafe {
+                    let library = libc::dlopen(c"libcuda.so.1".as_ptr(), libc::RTLD_NOW);
+                    if library.is_null() {
+                        return None;
+                    }
+                    let symbol = |name: &CStr| {
+                        let symbol = libc::dlsym(library, name.as_ptr());
+                        (!symbol.is_null()).then_some(symbol)
+                    };
+                    Some(Driver {
+                        push_context: std::mem::transmute::<*mut c_void, WithHandle>(symbol(
+                            c"cuCtxPushCurrent_v2",
+                        )?),
+                        pop_context: std::mem::transmute::<*mut c_void, WithOutput<*mut c_void>>(
+                            symbol(c"cuCtxPopCurrent_v2")?,
+                        ),
+                        synchronize: std::mem::transmute::<*mut c_void, WithHandle>(symbol(
+                            c"cuStreamSynchronize",
+                        )?),
+                        device: std::mem::transmute::<*mut c_void, WithOutput<c_int>>(symbol(
+                            c"cuCtxGetDevice",
+                        )?),
+                    })
+                }
+            })
+            .as_ref()
+    }
+
+    fn check(result: c_int) -> Result<(), Error> {
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(Error(sys::AVERROR_EXTERNAL))
+        }
+    }
+
+    /// Wait until the pixels of `frame`, a CUDA frame, have been copied
+    /// into it, and return the ordinal of the GPU that holds them.
+    pub fn synchronize(frame: &Frame) -> Result<c_int, Error> {
+        let driver = driver().ok_or(Error(sys::AVERROR(libc::ENOSYS)))?;
+        // SAFETY: a CUDA frame references frames of a CUDA device, whose
+        // context the driver calls run in, pushed and popped around them.
+        unsafe {
+            let frames = (*frame.get().hw_frames_ctx)
+                .data
+                .cast::<sys::AVHWFramesContext>();
+            let device = (*(*frames).device_ref)
+                .data
+                .cast::<sys::AVHWDeviceContext>();
+            let cuda = (*device).hwctx.cast::<DeviceContext>();
+            check((driver.push_context)((*cuda).context))?;
+            let mut ordinal = 0;
+            let result = check((driver.synchronize)((*cuda).stream))
+                .and_then(|()| check((driver.device)(&mut ordinal)));
+            (driver.pop_context)(&mut ptr::null_mut());
+            result.map(|()| ordinal)
+        }
     }
 }
 

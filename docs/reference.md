@@ -5,7 +5,7 @@ Everything lives in the top-level `iterframes` module.
 ## read
 
 ```python
-read(path, height=None, width=None, prefetch_frames=1, device="cpu") -> Iterator[numpy.ndarray]
+read(path, height=None, width=None, prefetch_frames=1, device="cpu", on_device=False) -> Iterator[numpy.ndarray]
 ```
 
 Yields the frames of the video at `path`, in order. Each frame is a
@@ -19,6 +19,7 @@ dtype `uint8`, holding RGB pixels.
 | `width` | Width of the frames. Defaults to the width of the video |
 | `prefetch_frames` | How many decoded frames may wait for your code. Defaults to 1 |
 | `device` | Where to decode: `"cpu"`, `"auto"`, or a name from `DEVICES`. Defaults to `"cpu"`. See [Hardware decoding](#hardware-decoding) |
+| `on_device` | With `device="cuda"`, yield `CudaFrame` objects left on the GPU instead of arrays. See [Frames on the GPU](#frames-on-the-gpu) |
 
 Frames are resized with bilinear interpolation. When only one of `height`
 and `width` is given, the other keeps the size of the video, so the aspect
@@ -122,8 +123,9 @@ the code that processes the frames. The names are PyTorch's:
 | `"cuda"` | Linux | NVDEC on an NVIDIA GPU, through the driver installed on the machine |
 
 `iterframes.DEVICES` lists the names the installed wheel supports, `"cpu"`
-included. Unlike in PyTorch, the device only decodes: the frames always
-reach your code as NumPy arrays in memory.
+included. Unlike in PyTorch, the device only decodes: the frames reach
+your code as NumPy arrays in memory, unless you keep them on an NVIDIA GPU
+with [`on_device`](#frames-on-the-gpu).
 
 ```python
 for frame in iterframes.read("video.mp4", device="auto"):
@@ -145,6 +147,68 @@ frame at a time: in our tests on 1080p H.264 and 4K HEVC it used 40% to
 70% of the CPU time of the CPU decoder, but delivered 4 to 6 times fewer
 frames per second. Measure both on your
 videos and machine. NVDEC support has not been measured yet.
+
+## Frames on the GPU
+
+With `device="cuda"`, each frame goes from the GPU to memory to become a
+NumPy array. A model on the same GPU would then send it back.
+`on_device=True` skips both copies: `read` yields `CudaFrame` objects that
+stay on the GPU, which PyTorch, CuPy, JAX, and other libraries take
+through [DLPack](https://dmlc.github.io/dlpack/latest/) without a copy.
+
+The price is the format. The frames are in NV12, the GPU decoder's
+format, not RGB:
+
+| Attribute | Value |
+| --- | --- |
+| `y` | Luma plane, of shape `(height, width)` |
+| `uv` | Chroma plane at half the resolution, of shape `(height / 2, width / 2, 2)` rounded up, U then V |
+| `height`, `width` | Size of the frame |
+| `format` | `"nv12"`, or `"p010"`/`"p016"` for videos of more than 8 bits, whose samples are `uint16` |
+| `device` | The GPU, such as `"cuda:0"` |
+
+The planes are `uint8` (or `uint16`) views of the decoder's memory, with
+a row stride larger than the width. Converting them to RGB is up to you,
+for instance in PyTorch, with the same conversion as iterframes applies on
+the CPU (BT.601, limited range):
+
+```python
+import torch
+import iterframes
+
+def nv12_to_rgb(frame):
+    y = torch.from_dlpack(frame.y).float()
+    uv = torch.from_dlpack(frame.uv).float()
+    uv = uv.repeat_interleave(2, 0).repeat_interleave(2, 1)
+    uv = uv[: y.shape[0], : y.shape[1]]
+    y = (y - 16) * (255 / 219)
+    u = (uv[..., 0] - 128) * (255 / 224)
+    v = (uv[..., 1] - 128) * (255 / 224)
+    r = y + 1.402 * v
+    g = y - 0.344136 * u - 0.714136 * v
+    b = y + 1.772 * u
+    return torch.stack([r, g, b], -1).round().clamp(0, 255).to(torch.uint8)
+
+frames = iterframes.read(
+    "video.mp4", height=224, width=224, device="cuda", on_device=True
+)
+for frame in frames:
+    rgb = nv12_to_rgb(frame)  # (224, 224, 3) uint8 tensor on the GPU
+    model(rgb.permute(2, 0, 1)[None].float() / 255)
+```
+
+- A frame's memory stays valid for as long as the frame, a plane, or a
+  tensor made from one lives. Keep only the frames you need: each holds
+  GPU memory.
+- The pixels are in place when `read` yields the frame, whatever CUDA
+  stream reads them.
+- Every frame must be decoded on the GPU. A codec it does not support,
+  such as AV1, raises `RuntimeError` instead of falling back to the CPU.
+- `on_device` needs `device="cuda"`: `"auto"` might pick the CPU, and
+  VideoToolbox frames already live in memory that the CPU shares.
+
+This has not run on an NVIDIA GPU yet; please report how it works for
+you.
 
 ## Constants
 

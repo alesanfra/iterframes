@@ -12,16 +12,20 @@ import numpy as np
 from .iterframes import (
     DEVICES,
     FFMPEG_VERSION,
+    CudaFrame,
     Frame,
     FrameReader,
+    Plane,
     __version__,
 )
 
 __all__ = [
     "DEVICES",
     "FFMPEG_VERSION",
+    "CudaFrame",
     "Frame",
     "FrameReader",
+    "Plane",
     "__version__",
     "read",
     "read_all",
@@ -36,7 +40,8 @@ def read(
     width: Optional[int] = None,
     prefetch_frames: int = 1,
     device: str = "cpu",
-) -> Iterator[np.ndarray]:
+    on_device: bool = False,
+) -> Iterator[Union[np.ndarray, CudaFrame]]:
     """Yield the frames of the video at ``path``, in order.
 
     Each frame is a ``(height, width, 3)`` array of ``uint8`` RGB pixels.
@@ -50,11 +55,22 @@ def read(
     :data:`DEVICES`. ``"auto"`` picks the first hardware device that opens
     and falls back to the CPU, while a hardware name raises
     ``RuntimeError`` when its device cannot be opened. Codecs the device
-    does not support are decoded on the CPU either way. The frames always
-    reach your code as NumPy arrays in memory.
+    does not support are decoded on the CPU either way. The frames reach
+    your code as NumPy arrays in memory.
+
+    With ``device="cuda"``, ``on_device=True`` leaves the frames on the GPU
+    instead, as :class:`CudaFrame` objects in NV12 whose planes PyTorch and
+    other libraries take through DLPack without a copy. The frames must
+    then be decoded on the GPU: other codecs raise ``RuntimeError``.
     """
+    reader = FrameReader(
+        path, height, width, prefetch_frames, device, on_device
+    )
+    if on_device:
+        yield from reader
+        return
     # The arrays share memory with the frames, which they keep alive.
-    for frame in FrameReader(path, height, width, prefetch_frames, device):
+    for frame in reader:
         yield np.asarray(frame)
 
 

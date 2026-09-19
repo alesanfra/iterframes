@@ -168,3 +168,65 @@ def test_hardware_device(video_path, device, size):
     assert len(frames) == len(expected)
     for frame, reference in zip(frames, expected):
         assert_close(frame, reference)
+
+
+def test_on_device_needs_cuda(video_path):
+    with pytest.raises(ValueError, match="on_device=True needs"):
+        next(iterframes.read(video_path, device="auto", on_device=True))
+
+
+@pytest.mark.skipif("cuda" not in iterframes.DEVICES, reason="no NVDEC")
+@pytest.mark.parametrize("size", [None, (135, 240)])
+def test_on_device(video_path, size):
+    height, width = size or (270, 480)
+    try:
+        frame = next(
+            iterframes.read(
+                video_path,
+                *size or (None, None),
+                device="cuda",
+                on_device=True,
+            )
+        )
+    except RuntimeError as error:
+        pytest.skip(f"no cuda device: {error}")
+
+    assert isinstance(frame, iterframes.CudaFrame)
+    assert (frame.height, frame.width, frame.format) == (height, width, "nv12")
+    assert frame.device.startswith("cuda:")
+    assert frame.y.shape == [height, width]
+    assert frame.uv.shape == [(height + 1) // 2, (width + 1) // 2, 2]
+    assert frame.y.__dlpack_device__()[0] == 2  # kDLCUDA
+    # An unconsumed capsule frees its tensor when collected.
+    frame.y.__dlpack__()
+
+
+@pytest.mark.skipif("cuda" not in iterframes.DEVICES, reason="no NVDEC")
+def test_on_device_matches_cpu(video_path, pyav_frames):
+    torch = pytest.importorskip("torch")
+    try:
+        frames = list(
+            iterframes.read(video_path, device="cuda", on_device=True)
+        )
+    except RuntimeError as error:
+        pytest.skip(f"no cuda device: {error}")
+
+    assert len(frames) == len(pyav_frames)
+    for frame, expected in zip(frames, pyav_frames):
+        rgb = nv12_to_rgb(torch, frame).cpu().numpy()
+        assert_close(rgb, expected)
+
+
+def nv12_to_rgb(torch, frame):
+    """The conversion shown in docs/reference.md."""
+    y = torch.from_dlpack(frame.y).float()
+    uv = torch.from_dlpack(frame.uv).float()
+    uv = uv.repeat_interleave(2, 0).repeat_interleave(2, 1)
+    uv = uv[: y.shape[0], : y.shape[1]]
+    y = (y - 16) * (255 / 219)
+    u = (uv[..., 0] - 128) * (255 / 224)
+    v = (uv[..., 1] - 128) * (255 / 224)
+    r = y + 1.402 * v
+    g = y - 0.344136 * u - 0.714136 * v
+    b = y + 1.772 * u
+    return torch.stack([r, g, b], -1).round().clamp(0, 255).to(torch.uint8)

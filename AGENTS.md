@@ -62,7 +62,10 @@ as `iterframes.iterframes`, and `iterframes/__init__.py` wraps its
   GPU. Both add no library to the wheel. The macOS build needs clang's
   compiler-rt for `@available`, which `build.rs` links.
 - NVDEC has never run on a GPU in this project: CI has none, and the
-  `cuda` tests skip when the device does not open.
+  `cuda` tests skip when the device does not open. The same goes for
+  `on_device=True` (`CudaFrame`, `Plane`, `src/dlpack.rs`), which waits on
+  cuvid's copy with CUDA driver calls found through dlopen
+  (`ffmpeg::cuda`).
 
 ## Layout
 
@@ -71,6 +74,7 @@ as `iterframes.iterframes`, and `iterframes/__init__.py` wraps its
 | `src/lib.rs` | PyO3 module: `Frame`, `FrameReader`, error mapping, module init |
 | `src/decoder.rs` | Decoding thread |
 | `src/ffmpeg.rs` | Safe wrappers over the FFmpeg calls the crate needs |
+| `src/dlpack.rs` | DLPack capsules for the planes of `CudaFrame` |
 | `iterframes/__init__.py` | `read`, `read_all` |
 | `build.rs` | Builds and links FFmpeg, generates its bindings |
 | `scripts/build-ffmpeg.sh` | Static FFmpeg and dav1d, run by `build.rs` |

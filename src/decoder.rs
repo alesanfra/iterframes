@@ -1,3 +1,4 @@
+use std::ffi::c_int;
 use std::thread;
 
 use crossbeam_channel::{Receiver, Sender, bounded};
@@ -11,6 +12,8 @@ pub enum Error {
     Decode(ffmpeg::Error),
     /// The device asked for by name, such as `"cuda"`, cannot be opened.
     Device(&'static str, ffmpeg::Error),
+    /// Frames were asked to stay on the GPU, but this one cannot.
+    NotOnDevice(&'static str),
 }
 
 /// Where to decode.
@@ -24,21 +27,39 @@ pub enum Device {
     Hardware(DeviceType, &'static str),
 }
 
-pub type Message = Result<Frame, Error>;
+/// A decoded frame.
+pub enum Decoded {
+    /// Packed RGB24 pixels in memory.
+    Rgb(Frame),
+    /// NV12 (or P010, P016) pixels on the CUDA GPU numbered `gpu`.
+    Cuda { frame: Frame, gpu: c_int },
+}
+
+/// The pixel formats that frames left on the GPU may have: a plane of
+/// luma, then one of interleaved chroma at half the width and height.
+pub const CUDA_FORMATS: [(ffmpeg::PixelFormat, &str, u8); 3] = [
+    (ffmpeg::PixelFormat::AV_PIX_FMT_NV12, "nv12", 8),
+    (ffmpeg::PixelFormat::AV_PIX_FMT_P010LE, "p010", 16),
+    (ffmpeg::PixelFormat::AV_PIX_FMT_P016LE, "p016", 16),
+];
+
+pub type Message = Result<Decoded, Error>;
 
 /// Decode `path` on a background thread and return the channel that
-/// receives its RGB24 frames. The channel holds at most `prefetch` frames;
+/// receives its frames: RGB24 in memory, or with `on_device`, left on the
+/// CUDA GPU that decoded them. The channel holds at most `prefetch` frames;
 /// it is closed after the last frame or right after an error.
 pub fn start(
     path: String,
     height: Option<u32>,
     width: Option<u32>,
     device: Device,
+    on_device: bool,
     prefetch: usize,
 ) -> Receiver<Message> {
     let (tx, rx) = bounded(prefetch);
     thread::spawn(move || {
-        if let Err(err) = decode(&path, height, width, device, &tx) {
+        if let Err(err) = decode(&path, height, width, device, on_device, &tx) {
             // Nobody is listening once the reader has been dropped.
             let _ = tx.send(Err(err));
         }
@@ -51,6 +72,7 @@ fn decode(
     height: Option<u32>,
     width: Option<u32>,
     device: Device,
+    on_device: bool,
     tx: &Sender<Message>,
 ) -> Result<(), Error> {
     let open = |err| Error::Open(path.to_owned(), err);
@@ -71,6 +93,7 @@ fn decode(
     let mut converter = Converter {
         height,
         width,
+        on_device,
         scaler: None,
     };
     let mut packet = Packet::new();
@@ -90,6 +113,7 @@ fn decode(
 struct Converter {
     height: Option<u32>,
     width: Option<u32>,
+    on_device: bool,
     scaler: Option<Scaler>,
 }
 
@@ -99,19 +123,28 @@ impl Converter {
     fn drain(&mut self, decoder: &mut Decoder, tx: &Sender<Message>) -> Result<bool, Error> {
         let mut decoded = Frame::new();
         while decoder.receive(&mut decoded) {
-            let downloaded;
-            let frame = if decoded.is_hardware() {
-                downloaded = decoded.download().map_err(Error::Decode)?;
-                &downloaded
+            let message = if self.on_device {
+                // The frame leaves with the message; decode into a new one.
+                keep_on_gpu(std::mem::replace(&mut decoded, Frame::new()))?
             } else {
-                &decoded
+                Decoded::Rgb(self.convert(&decoded)?)
             };
-            let rgb = self.scaler(frame)?.run(frame).map_err(Error::Decode)?;
-            if tx.send(Ok(rgb)).is_err() {
+            if tx.send(Ok(message)).is_err() {
                 return Ok(false);
             }
         }
         Ok(true)
+    }
+
+    fn convert(&mut self, decoded: &Frame) -> Result<Frame, Error> {
+        let downloaded;
+        let frame = if decoded.is_hardware() {
+            downloaded = decoded.download().map_err(Error::Decode)?;
+            &downloaded
+        } else {
+            decoded
+        };
+        self.scaler(frame)?.run(frame).map_err(Error::Decode)
     }
 
     /// The scaler for `frame`, rebuilt whenever the input size or pixel
@@ -132,4 +165,19 @@ impl Converter {
         }
         Ok(self.scaler.as_mut().expect("scaler was just set"))
     }
+}
+
+/// Check that `frame` is a CUDA frame in a format Python can use, and wait
+/// until its pixels are in place.
+fn keep_on_gpu(frame: Frame) -> Result<Decoded, Error> {
+    let format = frame.hardware_format().ok_or(Error::NotOnDevice(
+        "the video's codec is not decoded on the GPU",
+    ))?;
+    if !CUDA_FORMATS.iter().any(|(known, _, _)| *known == format) {
+        return Err(Error::NotOnDevice(
+            "the GPU decodes the video to a pixel format other than NV12, P010, or P016",
+        ));
+    }
+    let gpu = ffmpeg::cuda::synchronize(&frame).map_err(|err| Error::Device("cuda", err))?;
+    Ok(Decoded::Cuda { frame, gpu })
 }
