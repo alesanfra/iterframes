@@ -1,15 +1,18 @@
 [build-system]
-requires = ["maturin>=1.9,<2.0"]
+requires = ["maturin>=1.13.3,<2.0"]
 build-backend = "maturin"
 
 [project]
 name = "iterframes"
-description = "Iterate on video frames quickly"
 authors = [
     { name = "Alessio Sanfratello", email = "sanfra90@gmail.com" },
 ]
+description = "Iterate over the frames of a video as NumPy arrays, decoded by FFmpeg in Rust"
 readme = "README.md"
-requires-python = ">=3.9"
+license = "LGPL-3.0-only"
+license-files = ["LICENSE"]
+keywords = ["video", "decoder", "ffmpeg", "frames", "numpy"]
+requires-python = ">=3.10"
 classifiers = [
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
@@ -19,22 +22,50 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-    "numpy>=1.16.0",
+    "numpy>=1.21",
 ]
 
 [project.urls]
 Homepage = "https://github.com/alesanfra/iterframes"
 Source = "https://github.com/alesanfra/iterframes"
+Documentation = "https://iterframes.readthedocs.io"
+Changelog = "https://github.com/alesanfra/iterframes/blob/master/CHANGELOG.md"
+Issues = "https://github.com/alesanfra/iterframes/issues"
+
+[dependency-groups]
+dev = [
+    "av>=15",
+    "maturin>=1.13.3",
+    "pre-commit>=4",
+    "pytest>=8",
+]
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.6",
+    "pymdown-extensions>=10.16",
+]
 
 [tool.maturin]
-features = ["pyo3/extension-module", "pyo3/abi3-py39"]
+features = ["pyo3/extension-module"]
 
 [tool.ruff]
 line-length = 79
 
+[tool.ruff.format]
+# Documentation snippets are wrapped for reading, not to 79 columns.
+exclude = ["**/*.md"]
+
 [tool.ruff.lint]
-select = ["E", "F", "I"]  # Enable pycodestyle errors, pyflakes, and isort
+select = ["E", "F", "I"]  # pycodestyle errors, pyflakes, isort
 fixable = ["ALL"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["iterframes"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-m \"not benchmark\""
+testpaths = ["tests"]
+markers = [
+    "benchmark: compare decoding speed with PyAV",
+]

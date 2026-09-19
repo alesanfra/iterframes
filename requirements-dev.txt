@@ -1,5 +1,0 @@
-auditwheel
-delocate
-maturin
-pre-commit
-pytest

@@ -1,0 +1,67 @@
+site_name: iterframes
+site_description: Iterate over the frames of a video as NumPy arrays, decoded by FFmpeg in Rust
+site_author: Alessio Sanfratello
+site_url: https://iterframes.readthedocs.io
+
+repo_name: alesanfra/iterframes
+repo_url: https://github.com/alesanfra/iterframes
+edit_uri: edit/master/docs/
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.share
+    - search.suggest
+    - navigation.footer
+    - content.code.copy
+    - content.code.annotate
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Reference: reference.md
+  - Development: development.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/alesanfra/iterframes
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/iterframes/
+
+copyright: Copyright &copy; 2020 Alessio Sanfratello
