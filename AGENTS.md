@@ -52,6 +52,12 @@ as `iterframes.iterframes`, and `iterframes/__init__.py` wraps its
 - Cargo does not track the FFmpeg libraries: after changing them, run
   `cargo clean -p ffmpeg-sys-next`.
 - Keep the build LGPL: never pass `--enable-gpl` or `--enable-nonfree`.
+- Hardware decoding: VideoToolbox on macOS; on Linux the `*_cuvid`
+  decoders, which load the NVIDIA driver with dlopen and resize on the
+  GPU. Both add no library to the wheel. The static macOS build needs
+  clang's compiler-rt for `@available`, which `build.rs` links.
+- NVDEC has never run on a GPU in this project: CI has none, and the
+  `cuda` tests skip when the device does not open.
 
 ## Layout
 

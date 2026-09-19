@@ -19,6 +19,7 @@ set -euo pipefail
 
 FFMPEG_VERSION="${FFMPEG_VERSION:-9.0.2}"
 DAV1D_VERSION="1.5.4"
+NV_CODEC_HEADERS_VERSION="13.0.19.0"
 NASM_VERSION="3.02"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -26,7 +27,7 @@ PREFIX="${1:-$ROOT/build/ffmpeg}"
 mkdir -p "$PREFIX"
 PREFIX="$(cd "$PREFIX" && pwd)"
 JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
-BUILD_ID="ffmpeg $FFMPEG_VERSION dav1d $DAV1D_VERSION $(uname -sm)"
+BUILD_ID="ffmpeg $FFMPEG_VERSION dav1d $DAV1D_VERSION nv-codec-headers $NV_CODEC_HEADERS_VERSION $(uname -sm)"
 
 if [[ "$(cat "$PREFIX/VERSION" 2>/dev/null)" == "$BUILD_ID" ]]; then
     echo "$BUILD_ID already built in $PREFIX"
@@ -78,11 +79,27 @@ curl -fsSL "https://downloads.videolan.org/pub/videolan/dav1d/$DAV1D_VERSION/dav
 )
 export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
 
+# Hardware decoders that add no dependency to the wheel: VideoToolbox is a
+# system framework on macOS, and the NVIDIA decoders (cuvid, which can
+# resize on the GPU) load the driver with dlopen at run time, so FFmpeg
+# only needs their headers (MIT) to build.
+HWACCEL_FLAGS=()
+case "$(uname -s)" in
+    Darwin)
+        HWACCEL_FLAGS=(--enable-videotoolbox)
+        ;;
+    Linux)
+        curl -fsSL "https://github.com/FFmpeg/nv-codec-headers/releases/download/n$NV_CODEC_HEADERS_VERSION/nv-codec-headers-$NV_CODEC_HEADERS_VERSION.tar.gz" | tar xz
+        make -C "nv-codec-headers-$NV_CODEC_HEADERS_VERSION" PREFIX="$PREFIX" install
+        HWACCEL_FLAGS=(--enable-ffnvcodec --enable-cuda --enable-cuvid)
+        ;;
+esac
+
 curl -fsSL "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz" | tar xJ
 cd "ffmpeg-$FFMPEG_VERSION"
 
-# --disable-autodetect keeps system libraries (zlib, iconv, VideoToolbox,
-# X11, ...) out, so the wheel links against libc alone. It also drops
+# --disable-autodetect keeps system libraries (zlib, iconv, X11, ...) out,
+# so the wheel links against libc and system frameworks alone. It also drops
 # threads, which are enabled again explicitly. Only the libraries and
 # components needed to demux, decode, and convert frames are built.
 ./configure \
@@ -104,7 +121,7 @@ cd "ffmpeg-$FFMPEG_VERSION"
     --disable-muxers \
     --disable-devices \
     --disable-filters \
-    --disable-hwaccels
+    "${HWACCEL_FLAGS[@]}"
 make -j"$JOBS"
 make install
 

@@ -65,5 +65,6 @@ The bundled FFmpeg reads the containers and codecs FFmpeg supports on its
 own, such as MP4, MKV, WebM, AVI, and MPEG-TS with H.264, H.265, VP8, VP9,
 MPEG-4, ProRes, and MJPEG. AV1 is decoded by
 [dav1d](https://code.videolan.org/videolan/dav1d). Only local files are
-read: network protocols are left out of the build, and hardware decoding
-is not used.
+read: network protocols are left out of the build. Decoding runs on the
+CPU unless you ask for a hardware device; see
+[Hardware decoding](reference.md#hardware-decoding).

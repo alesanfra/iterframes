@@ -5,7 +5,7 @@ Everything lives in the top-level `iterframes` module.
 ## read
 
 ```python
-read(path, height=None, width=None, prefetch_frames=1) -> Iterator[numpy.ndarray]
+read(path, height=None, width=None, prefetch_frames=1, hwaccel=None) -> Iterator[numpy.ndarray]
 ```
 
 Yields the frames of the video at `path`, in order. Each frame is a
@@ -18,6 +18,7 @@ dtype `uint8`, holding RGB pixels.
 | `height` | Height of the frames. Defaults to the height of the video |
 | `width` | Width of the frames. Defaults to the width of the video |
 | `prefetch_frames` | How many decoded frames may wait for your code. Defaults to 1 |
+| `hwaccel` | Decode on a hardware device: `"auto"` or a name from `HWACCELS`. Defaults to `None`, the CPU. See [Hardware decoding](#hardware-decoding) |
 
 Frames are resized with bilinear interpolation. When only one of `height`
 and `width` is given, the other keeps the size of the video, so the aspect
@@ -43,7 +44,7 @@ for frame in iterframes.read("video.mp4", height=270, width=480):
 ## read_all
 
 ```python
-read_all(path, height=None, width=None) -> list[numpy.ndarray]
+read_all(path, height=None, width=None, hwaccel=None) -> list[numpy.ndarray]
 ```
 
 Returns every frame of the video in a list. It takes the same arguments as
@@ -110,9 +111,43 @@ for frame in FrameReader("video.mp4"):
 
 The pixels stay alive as long as the frame or any array or view on it.
 
+## Hardware decoding
+
+`hwaccel` moves decoding to a hardware device, which leaves more CPU to
+the code that processes the frames:
+
+| Name | Platform | Device |
+| --- | --- | --- |
+| `"videotoolbox"` | macOS | VideoToolbox, the media engine of Apple silicon |
+| `"cuda"` | Linux | NVDEC on an NVIDIA GPU, through the driver installed on the machine |
+
+`iterframes.HWACCELS` lists the names the installed wheel supports.
+
+```python
+for frame in iterframes.read("video.mp4", hwaccel="auto"):
+    ...
+```
+
+- `"auto"` uses the first device that opens and falls back to the CPU
+  when there is none.
+- A name raises `RuntimeError` on the first `next()` when its device
+  cannot be opened, for instance without an NVIDIA driver.
+- Codecs that the device does not support are decoded on the CPU either
+  way. AV1 always is, by dav1d.
+- With `"cuda"`, the GPU also does the resizing to `height` and `width`,
+  so that only frames of the final size are copied to memory. Its
+  interpolation differs slightly from the CPU's.
+
+A device is not always faster. On Apple silicon, VideoToolbox decodes one
+frame at a time: in our tests on 1080p H.264 and 4K HEVC it used 40% to
+70% of the CPU time of the CPU decoder, but delivered 4 to 6 times fewer
+frames per second. Measure both on your
+videos and machine. NVDEC support has not been measured yet.
+
 ## Constants
 
 | Name | Value |
 | --- | --- |
 | `__version__` | Version of iterframes, such as `"0.4.0"` |
 | `FFMPEG_VERSION` | Version of the FFmpeg that iterframes is linked to, such as `"9.0.2"` |
+| `HWACCELS` | Names accepted by `hwaccel`, such as `["videotoolbox"]` |

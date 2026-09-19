@@ -9,7 +9,7 @@ use pyo3::prelude::*;
 mod decoder;
 mod ffmpeg;
 
-use decoder::{Error, Message};
+use decoder::{Error, Hwaccel, Message};
 
 impl From<Error> for PyErr {
     fn from(err: Error) -> PyErr {
@@ -22,6 +22,10 @@ impl From<Error> for PyErr {
                 PyValueError::new_err(format!("cannot read video {path:?}: {err}"))
             }
             Error::Decode(err) => PyRuntimeError::new_err(format!("decoding failed: {err}")),
+            Error::Hardware(kind, err) => PyRuntimeError::new_err(format!(
+                "cannot use hardware decoder {:?}: {err}",
+                kind.name()
+            )),
         }
     }
 }
@@ -108,19 +112,30 @@ struct FrameReader {
 #[pymethods]
 impl FrameReader {
     #[new]
-    #[pyo3(signature = (path, height=None, width=None, prefetch_frames=1))]
+    #[pyo3(signature = (path, height=None, width=None, prefetch_frames=1, hwaccel=None))]
     fn new(
         path: PathBuf,
         height: Option<u32>,
         width: Option<u32>,
         prefetch_frames: usize,
+        hwaccel: Option<&str>,
     ) -> PyResult<Self> {
+        let hwaccel = match hwaccel {
+            None => Hwaccel::None,
+            Some("auto") => Hwaccel::Auto,
+            Some(name) => Hwaccel::Device(ffmpeg::DeviceType::by_name(name).ok_or_else(|| {
+                PyValueError::new_err(format!(
+                    "unknown hardware decoder {name:?}; this build has: {}",
+                    hardware_decoders().join(", ")
+                ))
+            })?),
+        };
         let path = path
             .into_os_string()
             .into_string()
             .map_err(|path| PyValueError::new_err(format!("path is not valid UTF-8: {path:?}")))?;
         Ok(Self {
-            frames: decoder::start(path, height, width, prefetch_frames),
+            frames: decoder::start(path, height, width, hwaccel, prefetch_frames),
         })
     }
 
@@ -137,6 +152,14 @@ impl FrameReader {
     }
 }
 
+/// Names of the hardware decoders this build of FFmpeg includes.
+fn hardware_decoders() -> Vec<&'static str> {
+    ffmpeg::DeviceType::all()
+        .into_iter()
+        .map(ffmpeg::DeviceType::name)
+        .collect()
+}
+
 /// Decode videos with FFmpeg, one frame at a time.
 #[pymodule]
 mod iterframes {
@@ -149,6 +172,7 @@ mod iterframes {
     fn init(module: &Bound<'_, PyModule>) -> PyResult<()> {
         module.add("__version__", env!("CARGO_PKG_VERSION"))?;
         module.add("FFMPEG_VERSION", ffmpeg::version())?;
+        module.add("HWACCELS", hardware_decoders())?;
         ffmpeg::init();
         Ok(())
     }

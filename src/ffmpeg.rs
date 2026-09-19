@@ -1,6 +1,6 @@
 //! Safe wrappers over the few parts of FFmpeg that iterframes uses:
-//! demuxing, decoding, and converting frames to RGB24. Every call into
-//! FFmpeg lives in this module.
+//! demuxing, decoding (on the CPU or on a hardware device), and converting
+//! frames to RGB24. Every call into FFmpeg lives in this module.
 
 use std::ffi::{CStr, CString, c_char, c_int};
 use std::fmt;
@@ -43,10 +43,12 @@ fn check(code: c_int) -> Result<c_int, Error> {
     if code < 0 { Err(Error(code)) } else { Ok(code) }
 }
 
-/// Keep FFmpeg's warnings off stderr: errors reach Python as exceptions.
+/// Keep FFmpeg quiet: errors reach Python as exceptions, and the ones it
+/// logs are either repeated there or expected, such as a missing NVIDIA
+/// driver while `hwaccel="auto"` probes for a device.
 pub fn init() {
     // SAFETY: plain setter of a global.
-    unsafe { sys::av_log_set_level(sys::AV_LOG_ERROR) };
+    unsafe { sys::av_log_set_level(sys::AV_LOG_QUIET) };
 }
 
 /// Version of the FFmpeg that the module is linked to, such as `9.0.2`.
@@ -82,8 +84,17 @@ impl Input {
         }
     }
 
-    /// Open a decoder for the best video stream of the file.
-    pub fn video_decoder(&self) -> Result<Decoder, Error> {
+    /// Open a decoder for the best video stream of the file. With a
+    /// `device`, libavcodec decodes on it whenever it supports the codec,
+    /// and on the CPU otherwise. `width` and `height` are the size the
+    /// caller wants: NVIDIA decoders resize to it while decoding, the
+    /// others leave it to the `Scaler`.
+    pub fn video_decoder(
+        &self,
+        device: Option<&HwDevice>,
+        width: Option<u32>,
+        height: Option<u32>,
+    ) -> Result<Decoder, Error> {
         let mut codec = ptr::null();
         // SAFETY: the context is open; the stream index returned is valid
         // for its `streams` array, and the codec context is freed by
@@ -98,6 +109,16 @@ impl Input {
                 0,
             ))?;
             let stream = *(*self.0.as_ptr()).streams.add(index as usize);
+            let parameters = (*stream).codecpar;
+            let cuvid = match device {
+                Some(device) if device.kind.0 == sys::AVHWDeviceType::AV_HWDEVICE_TYPE_CUDA => {
+                    cuvid_decoder((*parameters).codec_id)
+                }
+                _ => None,
+            };
+            if let Some(cuvid) = cuvid {
+                codec = cuvid;
+            }
             let context = NonNull::new(sys::avcodec_alloc_context3(codec))
                 .ok_or(Error(sys::AVERROR(libc::ENOMEM)))?;
             let decoder = Decoder {
@@ -106,12 +127,31 @@ impl Input {
             };
             check(sys::avcodec_parameters_to_context(
                 context.as_ptr(),
-                (*stream).codecpar,
+                parameters,
             ))?;
+            if cuvid.is_some() && (width.is_some() || height.is_some()) {
+                let size = format!(
+                    "{}x{}",
+                    width.unwrap_or((*parameters).width as u32),
+                    height.unwrap_or((*parameters).height as u32),
+                );
+                let size = CString::new(size).expect("no NUL in a size");
+                check(sys::av_opt_set(
+                    (*context.as_ptr()).priv_data,
+                    c"resize".as_ptr(),
+                    size.as_ptr(),
+                    0,
+                ))?;
+            }
             // libavcodec decodes on a single thread unless asked otherwise;
             // a count of 0 lets it pick one thread per core.
             (*context.as_ptr()).thread_type = sys::FF_THREAD_FRAME;
             (*context.as_ptr()).thread_count = 0;
+            if let Some(device) = device {
+                // The codec context takes its own reference and drops it
+                // when freed.
+                (*context.as_ptr()).hw_device_ctx = sys::av_buffer_ref(device.device.as_ptr());
+            }
             check(sys::avcodec_open2(context.as_ptr(), codec, ptr::null_mut()))?;
             Ok(decoder)
         }
@@ -241,6 +281,33 @@ impl Frame {
         self.get().format
     }
 
+    /// Whether the pixels live on a hardware device rather than in memory.
+    pub fn is_hardware(&self) -> bool {
+        !self.get().hw_frames_ctx.is_null()
+    }
+
+    /// Make the pixels of a hardware frame readable from the CPU: map them
+    /// where the device allows it, as VideoToolbox does, and copy them
+    /// otherwise.
+    pub fn download(&self) -> Result<Frame, Error> {
+        let frame = Frame::new();
+        // SAFETY: `self` is a hardware frame and `frame` a blank one. A
+        // mapped frame holds a reference to the hardware one, so it stays
+        // valid after `self` is reused.
+        unsafe {
+            let flags = sys::AV_HWFRAME_MAP_READ as c_int;
+            if sys::av_hwframe_map(frame.0.as_ptr(), self.0.as_ptr(), flags) < 0 {
+                sys::av_frame_unref(frame.0.as_ptr());
+                check(sys::av_hwframe_transfer_data(
+                    frame.0.as_ptr(),
+                    self.0.as_ptr(),
+                    0,
+                ))?;
+            }
+        }
+        Ok(frame)
+    }
+
     /// Bytes from the start of one row of `plane` to the next.
     pub fn stride(&self, plane: usize) -> usize {
         self.get().linesize[plane] as usize
@@ -258,6 +325,80 @@ impl Drop for Frame {
         let mut frame = self.0.as_ptr();
         // SAFETY: allocated by av_frame_alloc.
         unsafe { sys::av_frame_free(&mut frame) };
+    }
+}
+
+/// The NVIDIA decoder for `codec`, such as `h264_cuvid`, if this FFmpeg has
+/// one. Unlike the NVDEC hwaccel of the regular decoders, it can resize on
+/// the GPU while decoding, so that only small frames reach memory.
+fn cuvid_decoder(codec: sys::AVCodecID) -> Option<*const sys::AVCodec> {
+    // SAFETY: avcodec_get_name returns a static string for any id.
+    let name = unsafe { CStr::from_ptr(sys::avcodec_get_name(codec)) };
+    let name = CString::new(format!("{}_cuvid", name.to_str().ok()?)).ok()?;
+    // SAFETY: lookup by a NUL-terminated name.
+    let decoder = unsafe { sys::avcodec_find_decoder_by_name(name.as_ptr()) };
+    (!decoder.is_null()).then_some(decoder)
+}
+
+/// A kind of hardware decoder built into this FFmpeg, such as
+/// `videotoolbox` or `cuda`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DeviceType(sys::AVHWDeviceType);
+
+impl DeviceType {
+    /// Every kind this FFmpeg was built with.
+    pub fn all() -> Vec<DeviceType> {
+        let mut types = Vec::new();
+        let mut current = sys::AVHWDeviceType::AV_HWDEVICE_TYPE_NONE;
+        loop {
+            // SAFETY: iterating from NONE is how the API is meant to be used.
+            current = unsafe { sys::av_hwdevice_iterate_types(current) };
+            if current == sys::AVHWDeviceType::AV_HWDEVICE_TYPE_NONE {
+                return types;
+            }
+            types.push(DeviceType(current));
+        }
+    }
+
+    /// The kind called `name`, if this FFmpeg was built with it.
+    pub fn by_name(name: &str) -> Option<DeviceType> {
+        Self::all().into_iter().find(|kind| kind.name() == name)
+    }
+
+    pub fn name(self) -> &'static str {
+        // SAFETY: the names are static strings, non-null for built kinds.
+        unsafe { CStr::from_ptr(sys::av_hwdevice_get_type_name(self.0)) }
+            .to_str()
+            .unwrap_or("unknown")
+    }
+}
+
+/// An open hardware device, such as a GPU.
+pub struct HwDevice {
+    device: NonNull<sys::AVBufferRef>,
+    kind: DeviceType,
+}
+
+impl HwDevice {
+    /// Open the default device of `kind`. Fails when the machine has no
+    /// such device or its driver cannot be loaded.
+    pub fn new(kind: DeviceType) -> Result<Self, Error> {
+        let mut device = ptr::null_mut();
+        // SAFETY: on success `device` holds a reference that `HwDevice`
+        // owns; on failure it stays null.
+        check(unsafe {
+            sys::av_hwdevice_ctx_create(&mut device, kind.0, ptr::null(), ptr::null_mut(), 0)
+        })?;
+        let device = NonNull::new(device).ok_or(Error(sys::AVERROR(libc::ENOMEM)))?;
+        Ok(Self { device, kind })
+    }
+}
+
+impl Drop for HwDevice {
+    fn drop(&mut self) {
+        let mut device = self.device.as_ptr();
+        // SAFETY: a reference created by av_hwdevice_ctx_create.
+        unsafe { sys::av_buffer_unref(&mut device) };
     }
 }
 
