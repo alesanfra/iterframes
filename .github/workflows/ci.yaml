@@ -147,6 +147,73 @@ jobs:
           uv pip install --reinstall-package iterframes dist/*.whl
           uv run --no-sync pytest
 
+  windows:
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      matrix:
+        platform:
+          - runner: windows-2025
+            target: x64
+    defaults:
+      run:
+        # MSYS2 runs the FFmpeg build script; path-type inherit keeps MSVC,
+        # cargo, and uv on PATH, after MSYS2's own tools.
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.platform.target }}
+      - name: Set up MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          path-type: inherit
+          # Native pkg-config and nasm; FFmpeg and dav1d compile with MSVC.
+          install: >-
+            make diffutils curl tar xz
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-nasm
+      - name: Remove MSYS2's link
+        # It would shadow MSVC's link.exe, for rustc among others.
+        run: rm -f /usr/bin/link.exe
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.1.0
+      - name: Install meson and ninja
+        # With a native Python, so that meson sees Windows and uses MSVC.
+        run: |
+          uv tool install meson
+          uv tool install ninja
+          echo "$(cygpath -u "$(uv tool dir --bin)")" >> "$GITHUB_PATH"
+      - name: Cache FFmpeg
+        uses: actions/cache@v6
+        with:
+          path: build/ffmpeg
+          key: ffmpeg-windows-${{ matrix.platform.target }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+      - name: Build wheels
+        run: |
+          uv sync --frozen --no-install-project
+          uv run --no-sync maturin build --release --out dist
+      - name: Show the FFmpeg build log
+        if: failure()
+        run: tail -n 200 build/ffmpeg.log
+      - name: Upload wheels
+        uses: actions/upload-artifact@v7
+        with:
+          name: wheels-windows-${{ matrix.platform.target }}
+          path: dist
+      - name: Run tests
+        run: |
+          for python in 3.11 3.14; do
+            uv sync --frozen --no-install-project --python $python
+            uv pip install --reinstall-package iterframes dist/*.whl
+            uv run --no-sync pytest
+          done
+      - name: Lint Rust
+        # The only job that compiles the Windows code paths.
+        run: cargo clippy --all-targets -- -D warnings
+
   sdist:
     runs-on: ubuntu-latest
     steps:
@@ -166,7 +233,7 @@ jobs:
     name: Attach to the GitHub release
     runs-on: ubuntu-latest
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
-    needs: [release-please, lint, linux, macos, sdist]
+    needs: [release-please, lint, linux, macos, windows, sdist]
     permissions:
       # Used to sign the attestations
       id-token: write

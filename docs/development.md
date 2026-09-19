@@ -2,14 +2,29 @@
 
 You need [uv](https://docs.astral.sh/uv/), a Rust toolchain from
 [rustup](https://rustup.rs/), and the tools to build FFmpeg: a C compiler,
-`make`, `curl`, `python3`, `pkg-config`, and libclang. Only Linux and
-macOS are supported.
+`make`, `curl`, `python3`, `pkg-config`, and libclang.
 
 ```console
 xcode-select --install && brew install pkg-config        # macOS
 sudo apt install build-essential curl python3-venv \
     pkg-config libclang-dev nasm                          # Debian, Ubuntu
 ```
+
+On Windows, FFmpeg is built with MSVC from an
+[MSYS2](https://www.msys2.org/) shell, as CI does in
+`.github/workflows/ci.yaml`. Install Visual Studio's C++ build tools and
+LLVM (for libclang), then, in MSYS2:
+
+```console
+pacman -S make diffutils curl tar xz \
+    mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-nasm
+rm /usr/bin/link.exe      # it shadows MSVC's link.exe
+uv tool install meson && uv tool install ninja
+```
+
+Start the MSYS2 UCRT64 shell from a Visual Studio developer prompt with
+`msys2_shell.cmd -ucrt64 -use-full-path`, so that `cl`, `cargo`, and `uv`
+stay on `PATH`, and run every command below from it.
 
 ## FFmpeg
 

@@ -52,7 +52,7 @@ fn build_ffmpeg(script: &Path, prefix: &Path) {
     lock.lock().expect("cannot lock the FFmpeg build");
 
     let log = prefix.with_extension("log");
-    let status = Command::new("bash")
+    let status = Command::new(bash())
         .arg(script)
         .arg(prefix)
         .stdout(File::create(&log).expect("cannot create the build log"))
@@ -86,6 +86,22 @@ fn build_ffmpeg(script: &Path, prefix: &Path) {
             tail.join("\n")
         );
     }
+}
+
+/// The shell that runs the build script. On Windows, Rust looks for a bare
+/// `bash` in the system directory before `PATH`, and would find WSL's
+/// there instead of MSYS2's.
+fn bash() -> PathBuf {
+    if cfg!(windows) {
+        let path = env::var_os("PATH").unwrap_or_default();
+        if let Some(bash) = env::split_paths(&path)
+            .map(|dir| dir.join("bash.exe"))
+            .find(|bash| bash.is_file())
+        {
+            return bash;
+        }
+    }
+    PathBuf::from("bash")
 }
 
 /// Link the static libraries and return their include paths.

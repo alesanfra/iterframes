@@ -54,18 +54,23 @@ as `iterframes.iterframes`, and `iterframes/__init__.py` wraps its
   as `AVERROR` are written by hand in the `sys` module of `src/ffmpeg.rs`.
 - The build disables autodetection, so the wheel depends on libc and
   system frameworks only; dav1d is added for AV1.
+- On Windows the script runs in MSYS2 but compiles with MSVC
+  (`--toolchain=msvc`, `-MD`), because the wheels target
+  `x86_64-pc-windows-msvc`; it copies each `libx.a` to `x.lib` for MSVC's
+  linker. `build.rs` finds `bash.exe` on `PATH` itself, since Rust would
+  otherwise pick WSL's from the system directory.
 - Keep the build LGPL: never pass `--enable-gpl` or `--enable-nonfree`.
 - Hardware decoding (`device="mps"` / `"cuda"`, PyTorch's names, mapped
   to FFmpeg's in `hardware_devices` in `src/lib.rs`): VideoToolbox on
-  macOS; on Linux the `*_cuvid`
-  decoders, which load the NVIDIA driver with dlopen and resize on the
-  GPU. Both add no library to the wheel. The macOS build needs clang's
+  macOS; on Linux and Windows
+  the `*_cuvid` decoders, which load the NVIDIA driver at run time and
+  resize on the GPU. Both add no library to the wheel. The macOS build needs clang's
   compiler-rt for `@available`, which `build.rs` links.
 - NVDEC has never run on a GPU in this project: CI has none, and the
   `cuda` tests skip when the device does not open. The same goes for
   `on_device=True` (`CudaFrame`, `Plane`, `src/dlpack.rs`), which waits on
-  cuvid's copy with CUDA driver calls found through dlopen
-  (`ffmpeg::cuda`).
+  cuvid's copy with CUDA driver calls found through dlopen, or
+  `LoadLibraryA` on Windows (`ffmpeg::cuda`).
 
 ## Layout
 
@@ -110,7 +115,8 @@ uv run --no-sync pytest
 ```
 
 CI runs the same four, plus `ruff check .` and `ruff format --check .` for
-the Python files. `pre-commit run -a` covers the formatters and linters
+the Python files. Only the `windows` job compiles the `cfg(windows)`
+code, and runs clippy on it. `pre-commit run -a` covers the formatters and linters
 locally.
 
 ## Docs

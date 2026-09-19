@@ -4,7 +4,9 @@
 # built too, because FFmpeg's own AV1 decoder needs a hardware decoder.
 #
 # Requires curl, make, a C compiler, and python3 (for meson and ninja,
-# which dav1d builds with).
+# which dav1d builds with). On Windows it runs in an MSYS2 shell and builds
+# with MSVC, whose environment must be set up, and needs meson, ninja,
+# nasm, and a native pkg-config on PATH (see docs/development.md).
 #
 # Usage: scripts/build-ffmpeg.sh [PREFIX]    (default: build/ffmpeg)
 #
@@ -23,6 +25,15 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PREFIX="${1:-$ROOT/build/ffmpeg}"
 mkdir -p "$PREFIX"
 PREFIX="$(cd "$PREFIX" && pwd)"
+WINDOWS=false
+case "$(uname -s)" in
+    MINGW* | MSYS* | CYGWIN*)
+        WINDOWS=true
+        # A path such as C:/x, which both the MSYS2 tools and the native
+        # ones (cl, meson, pkg-config) understand; /c/x is MSYS2's alone.
+        PREFIX="$(cygpath -m "$PREFIX")"
+        ;;
+esac
 JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 BUILD_ID="ffmpeg $FFMPEG_VERSION dav1d $DAV1D_VERSION $(uname -sm) script $(cksum < "$0" | cut -d' ' -f1)"
 
@@ -62,6 +73,17 @@ if ! command -v meson >/dev/null || ! command -v ninja >/dev/null; then
     export PATH="$SRC/tools/bin:$PATH"
 fi
 
+# MSVC builds static libraries named libx.a, but its linker, called with
+# -lx by FFmpeg's configure and by rustc, looks for x.lib.
+add_lib_names() {
+    if $WINDOWS; then
+        for library in "$PREFIX"/lib/lib*.a; do
+            name="$(basename "$library" .a)"
+            cp "$library" "$PREFIX/lib/${name#lib}.lib"
+        done
+    fi
+}
+
 curl -fsSL "https://downloads.videolan.org/pub/videolan/dav1d/$DAV1D_VERSION/dav1d-$DAV1D_VERSION.tar.xz" | tar xJ
 (
     cd "dav1d-$DAV1D_VERSION"
@@ -74,6 +96,7 @@ curl -fsSL "https://downloads.videolan.org/pub/videolan/dav1d/$DAV1D_VERSION/dav
         -Denable_tests=false
     ninja -C build install
 )
+add_lib_names
 export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
 
 # Hardware decoders that add no dependency to the wheel: VideoToolbox is a
@@ -85,27 +108,33 @@ case "$(uname -s)" in
     Darwin)
         HWACCEL_FLAGS=(--enable-videotoolbox)
         ;;
-    Linux)
+    Linux | MINGW* | MSYS* | CYGWIN*)
         curl -fsSL "https://github.com/FFmpeg/nv-codec-headers/releases/download/n$NV_CODEC_HEADERS_VERSION/nv-codec-headers-$NV_CODEC_HEADERS_VERSION.tar.gz" | tar xz
         make -C "nv-codec-headers-$NV_CODEC_HEADERS_VERSION" PREFIX="$PREFIX" install
         HWACCEL_FLAGS=(--enable-ffnvcodec --enable-cuda --enable-cuvid)
         ;;
 esac
 
+PLATFORM_FLAGS=(--enable-pthreads --enable-pic)
+if $WINDOWS; then
+    # The C runtime as a DLL (-MD), as rustc links it; cl defaults to the
+    # static one. Windows 10 APIs at most, whatever the SDK's default.
+    PLATFORM_FLAGS=(--toolchain=msvc --enable-w32threads
+        "--extra-cflags=-MD -D_WIN32_WINNT=0x0A00")
+fi
+
 curl -fsSL "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz" | tar xJ
 cd "ffmpeg-$FFMPEG_VERSION"
 
 # --disable-autodetect keeps system libraries (zlib, iconv, X11, ...) out,
 # so the wheel links against libc and system frameworks alone. It also drops
-# threads, which are enabled again explicitly. Only the libraries and
+# threads, which are enabled again explicitly, with the platform's API. Only the libraries and
 # components needed to demux, decode, and convert frames are built.
 ./configure \
     --prefix="$PREFIX" \
     --enable-static \
     --disable-shared \
-    --enable-pic \
     --disable-autodetect \
-    --enable-pthreads \
     --enable-libdav1d \
     --pkg-config-flags=--static \
     --disable-programs \
@@ -118,9 +147,11 @@ cd "ffmpeg-$FFMPEG_VERSION"
     --disable-muxers \
     --disable-devices \
     --disable-filters \
+    "${PLATFORM_FLAGS[@]}" \
     "${HWACCEL_FLAGS[@]}"
 make -j"$JOBS"
 make install
+add_lib_names
 
 # Make the .pc files relocatable, so that PREFIX keeps working after it is
 # moved or restored from the CI cache under another path.
