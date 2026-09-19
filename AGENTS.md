@@ -123,7 +123,8 @@ been measured.
 
 ## Conventions
 
-- Commits follow [Conventional Commits](https://www.conventionalcommits.org/).
+- Commits follow [Conventional Commits](https://www.conventionalcommits.org/),
+  which release-please turns into versions and changelog entries.
 - Rust: `cargo fmt` defaults, no `unwrap()` on anything reachable from
   Python input (a panic surfaces as `PanicException`).
 - Python: ruff with a 79-column limit.
@@ -132,10 +133,17 @@ been measured.
 ## Release
 
 Version lives in `Cargo.toml` and is re-exported as
-`iterframes.__version__`; `pyproject.toml` takes it from there. To
-release: bump the version, update `CHANGELOG.md`, tag with the bare
-version (`0.4.0`), and let `.github/workflows/ci.yaml` build and test the
-wheels, attest them in the `release` job, and upload them in the `publish`
-job. The upload uses PyPI trusted publishing, bound to this workflow file
-and the `pypi` environment name: renaming either breaks publishing until
-the publisher is updated on PyPI.
+`iterframes.__version__`; `pyproject.toml` takes it from there. Never bump
+it, write `CHANGELOG.md` entries, or push tags by hand: release-please
+does, from the Conventional Commits, in the `release-please` job of
+`.github/workflows/ci.yaml` (see "Releasing" in `docs/development.md`).
+Tags are `vX.Y.Z`; before 1.0 a breaking change bumps the minor version.
+
+Merging the release pull request creates the tag and a draft GitHub
+release; the same run attaches the wheels (`release` job), uploads them
+to PyPI (`publish`), and publishes the release (`publish-release`). The
+jobs share one workflow because a tag pushed with the default
+`GITHUB_TOKEN` starts no other workflow. The upload uses PyPI trusted
+publishing, bound to this workflow file and the `pypi` environment name:
+renaming either breaks publishing until the publisher is updated on
+PyPI.

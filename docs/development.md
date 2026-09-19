@@ -106,16 +106,35 @@ that the wheel works on older distributions.
 
 ## Pull requests
 
-Add tests for new behavior, update the docs and `CHANGELOG.md`, and use
-[Conventional Commits](https://www.conventionalcommits.org/) messages
-(`feat: ...`, `fix: ...`).
+Add tests for new behavior and update the docs. Write the commit messages,
+or the pull request title when squashing, as
+[Conventional Commits](https://www.conventionalcommits.org/): they decide
+the next version and become the changelog.
+
+| Commit | Next version, before 1.0 | From 1.0 on |
+| --- | --- | --- |
+| `fix: ...`, `perf: ...` | patch | patch |
+| `feat: ...` | minor | minor |
+| `feat!: ...`, or a `BREAKING CHANGE:` footer | minor | major |
+| `docs:`, `test:`, `ci:`, `chore:`, `refactor:` | none | none |
 
 ## Releasing
 
-1. Bump the version in `Cargo.toml`. `pyproject.toml` reads it from there.
-2. Add a `CHANGELOG.md` entry.
-3. Tag the commit with the bare version (`0.4.0`, no `v` prefix) and push
-   the tag.
+Releases are automated with
+[release-please](https://github.com/googleapis/release-please), in
+`.github/workflows/ci.yaml`:
 
-`.github/workflows/ci.yaml` builds the wheels, attests them, and publishes
-them to PyPI through trusted publishing.
+1. Every push to `main` opens or updates a release pull request, which
+   bumps the version in `Cargo.toml` and `Cargo.lock` and adds a
+   `CHANGELOG.md` entry from the commits since the last release. Edit it
+   freely before merging, for instance to add prose to the changelog; a
+   later push to `main` regenerates it.
+2. Merging it creates the tag, such as `v0.4.0`, and a draft GitHub
+   release.
+3. The same run builds and tests the wheels and the sdist, attaches them
+   to the draft with their attestations, publishes them to PyPI through
+   trusted publishing, and finally publishes the GitHub release.
+
+Do not bump the version, edit released `CHANGELOG.md` entries, or push
+tags by hand. `.release-please-manifest.json` holds the last released
+version and `release-please-config.json` the settings.

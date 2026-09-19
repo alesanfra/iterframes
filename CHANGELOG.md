@@ -2,10 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+From 0.4.0 on, [release-please](https://github.com/googleapis/release-please)
+writes each entry from the Conventional Commits since the previous release.
 
-## [0.4.0] - Unreleased
+## Unreleased
+
+Notes written by hand for 0.4.0, the rewrite. release-please inserts its
+0.4.0 entry below this section; fold the two together in the release pull
+request.
 
 ### Breaking
 - Python 3.11 or later is required, for the buffer protocol in the
@@ -55,6 +60,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   builds the static FFmpeg, links it, and generates its bindings, so that
   `maturin build` needs no FFmpeg installed and no environment variables.
   The system FFmpeg is no longer used, and the `static` feature is gone
+
+## [0.3.0] - 2022-04-22
+
+Tagged, but never published on PyPI.
+
+### Added
+- Resizing the frames while decoding
+
+### Changed
+- Frames are passed between threads through a crossbeam channel
+- Updated FFmpeg and PyO3, Rust edition 2021, metadata in
+  `pyproject.toml` (PEP 621)
+
+### Fixed
+- Resizing
 
 ## [0.2.0] - 2021-01-01
 

@@ -4,12 +4,14 @@
 # every CPython from 3.11 on. Edit by hand.
 name: CI
 
+# Releases come from release-please, in this workflow: a push to main
+# updates its release pull request, and merging that pull request creates
+# the tag and a draft GitHub release, then the jobs below attach the
+# wheels, publish them to PyPI, and publish the release.
 on:
   push:
     branches:
       - main
-    tags:
-      - '*'
   pull_request:
   workflow_dispatch:
 
@@ -17,6 +19,23 @@ permissions:
   contents: read
 
 jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' }}
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      # Reads release-please-config.json and .release-please-manifest.json.
+      # With the default GITHUB_TOKEN, its tag and pull request start no
+      # other workflow, which is why the release jobs live here.
+      - uses: googleapis/release-please-action@v4
+        id: release
+
   lint:
     runs-on: ubuntu-24.04
     steps:
@@ -144,14 +163,14 @@ jobs:
           path: dist
 
   release:
-    name: Release
+    name: Attach to the GitHub release
     runs-on: ubuntu-latest
-    if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
-    needs: [lint, linux, macos, sdist]
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    needs: [release-please, lint, linux, macos, sdist]
     permissions:
-      # Use to sign the release artifacts
+      # Used to sign the attestations
       id-token: write
-      # Used to upload release artifacts
+      # Used to upload the files to the draft release
       contents: write
       # Used to generate artifact attestation
       attestations: write
@@ -161,17 +180,22 @@ jobs:
         uses: actions/attest@v4
         with:
           subject-path: 'wheels-*/*'
+      - name: Upload to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release upload ${{ needs.release-please.outputs.tag_name }}
+          wheels-*/* --clobber --repo ${{ github.repository }}
 
   publish:
     name: Publish to PyPI
     runs-on: ubuntu-latest
-    if: ${{ startsWith(github.ref, 'refs/tags/') }}
-    needs: [release]
+    needs: [release-please, release]
     # Naming an environment records the run under Deployments, where the
     # release can also be gated behind a review.
     environment:
       name: pypi
-      url: https://pypi.org/project/iterframes/${{ github.ref_name }}
+      url: https://pypi.org/project/iterframes/${{ needs.release-please.outputs.version }}
     permissions:
       id-token: write
     steps:
@@ -183,3 +207,19 @@ jobs:
         # OIDC identity, so no API token is stored. "always" fails loudly if
         # that identity is missing instead of falling back.
         run: uv publish --trusted-publishing always 'wheels-*/*'
+
+  publish-release:
+    name: Publish the GitHub release
+    runs-on: ubuntu-latest
+    # Last, so that the release only shows once its files are attached and
+    # on PyPI.
+    needs: [release-please, publish]
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release edit ${{ needs.release-please.outputs.tag_name }}
+          --draft=false --repo ${{ github.repository }}
