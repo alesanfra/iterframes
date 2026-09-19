@@ -113,6 +113,13 @@ The wheels bundle FFmpeg and work on any CPython from 3.11 on, on Linux
 <https://iterframes.readthedocs.io>: [reference](https://iterframes.readthedocs.io/en/latest/reference/) and
 [development guide](https://iterframes.readthedocs.io/en/latest/development/).
 
+## Contributing
+
+Contributions are welcome. The
+[development guide](https://iterframes.readthedocs.io/en/latest/development/#help-wanted)
+lists features that are waiting for someone to build them, starting with
+fast random access to frames.
+
 ## License
 
 iterframes is released under the [LGPL-3.0](https://github.com/alesanfra/iterframes/blob/main/LICENSE). The wheels include
