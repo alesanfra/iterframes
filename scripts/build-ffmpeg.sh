@@ -128,8 +128,9 @@ cd "ffmpeg-$FFMPEG_VERSION"
 
 # --disable-autodetect keeps system libraries (zlib, iconv, X11, ...) out,
 # so the wheel links against libc and system frameworks alone. It also drops
-# threads, which are enabled again explicitly, with the platform's API. Only the libraries and
-# components needed to demux, decode, and convert frames are built.
+# threads, which are enabled again explicitly, with the platform's API. Only
+# the libraries and components needed to demux, decode, and convert frames
+# are built.
 ./configure \
     --prefix="$PREFIX" \
     --enable-static \
@@ -159,6 +160,14 @@ for pc in "$PREFIX"/lib/pkgconfig/*.pc; do
     sed -e "s|$PREFIX|\${prefix}|g" \
         -e 's|^prefix=.*|prefix=${pcfiledir}/../..|' "$pc" > "$pc.tmp"
     mv "$pc.tmp" "$pc"
+    if $WINDOWS; then
+        # FFmpeg writes MSVC's flags (-libpath:dir, x.lib) into Libs, but
+        # the pkg-config crate reads the GNU ones only (-Ldir, -lx).
+        sed -E -e 's/-libpath:/-L/g' \
+            -e ':again' -e 's/(^|[ :])([A-Za-z0-9_]+)\.lib( |$)/\1-l\2\3/' -e 't again' \
+            "$pc" > "$pc.tmp"
+        mv "$pc.tmp" "$pc"
+    fi
 done
 
 echo "$BUILD_ID" > "$PREFIX/VERSION"
