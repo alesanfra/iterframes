@@ -101,14 +101,6 @@ def test_not_a_video(tmp_path):
         next(iterframes.read(path))
 
 
-def test_frame_reader_yields_raw_buffers(video_path):
-    buffer, height, width = next(iterframes.FrameReader(str(video_path)))
-
-    assert (height, width) == (270, 480)
-    assert isinstance(buffer, bytearray)
-    assert len(buffer) == height * width * 3
-
-
 def test_av1():
     # FFmpeg's native AV1 decoder only drives hardware decoders; the
     # software decoding comes from dav1d.
@@ -120,3 +112,25 @@ def test_av1():
     assert len(frames) == len(expected) == 30
     for frame, reference in zip(frames, expected):
         assert_close(frame, reference)
+
+
+def test_frames_share_memory_with_ffmpeg(video_path):
+    frame = next(iterframes.FrameReader(video_path))
+    array = np.asarray(frame)
+
+    # Writing through the array changes the frame: no copy was made.
+    array[0, 0] = (1, 2, 3)
+    assert memoryview(frame).tobytes()[:3] == b"\x01\x02\x03"
+
+
+def test_frame_buffer(video_path):
+    # 470 * 3 bytes is not a multiple of 32, so swscale pads the rows.
+    frame = next(iterframes.FrameReader(str(video_path), width=470))
+    view = memoryview(frame)
+
+    assert isinstance(frame, iterframes.Frame)
+    assert view.shape == (270, 470, 3)
+    assert view.format == "B"
+    assert view.c_contiguous
+    assert not view.readonly
+    assert len(bytes(view)) == 270 * 470 * 3

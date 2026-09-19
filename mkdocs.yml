@@ -1,5 +1,5 @@
 site_name: iterframes
-site_description: Iterate over the frames of a video as NumPy arrays, decoded by FFmpeg in Rust
+site_description: Iterate over the frames of a video as NumPy arrays, decoded on a background thread while you process them
 site_author: Alessio Sanfratello
 site_url: https://iterframes.readthedocs.io
 

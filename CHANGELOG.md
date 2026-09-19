@@ -8,16 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.0] - Unreleased
 
 ### Breaking
-- Python 3.10 or later is required
+- Python 3.11 or later is required, for the buffer protocol in the
+  stable ABI
 - `read_batch` is replaced by `read_all`, which returns NumPy arrays in
   the order of the video. `read_batch` returned `Frame` objects in reverse
   order
 - Frames are C-contiguous arrays instead of strided views on a buffer
   padded at the end of each row
+- `FrameReader` yields `Frame` objects, which support the buffer
+  protocol, instead of `(bytearray, height, width)` tuples
 
 ### Added
 - The wheels bundle a static FFmpeg 9.0, so FFmpeg no longer needs to be
-  installed. One abi3 wheel per platform covers every CPython from 3.10
+  installed. One abi3 wheel per platform covers every CPython from 3.11
   on: Linux x86_64 and aarch64 (manylinux_2_28), macOS arm64
 - AV1 decoding, through dav1d
 - Errors are raised instead of ending the iteration silently:
@@ -30,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - FFmpeg decodes on several threads, and waiting for a frame releases the
   GIL, so other Python threads keep running
+- Frames reach NumPy without a copy: the arrays share memory with the
+  FFmpeg frames
 - The decoder thread stops as soon as the iterator is dropped
 - A change of resolution or pixel format within a stream no longer stops
   the decoding

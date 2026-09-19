@@ -4,15 +4,17 @@
 [![CI](https://github.com/alesanfra/iterframes/actions/workflows/ci.yaml/badge.svg)](https://github.com/alesanfra/iterframes/actions/workflows/ci.yaml)
 [![Documentation](https://readthedocs.org/projects/iterframes/badge/?version=latest)](https://iterframes.readthedocs.io)
 
-Iterate over the frames of a video as NumPy arrays. FFmpeg decodes them on
-a background thread, written in Rust, while your code processes the
-previous ones.
+A plain Python loop over the frames of a video, for when each frame goes
+through something expensive, such as a model. While your code works on one
+frame, FFmpeg decodes the next ones on a background thread, written in
+Rust, that never takes the GIL. Decoding overlaps with your work instead
+of adding to it.
 
 ```python
 import iterframes
 
 for frame in iterframes.read("video.mp4"):
-    ...  # frame is a (height, width, 3) uint8 array of RGB pixels
+    model(frame)  # frame is a (height, width, 3) uint8 array of RGB pixels
 
 # Resize while decoding
 for frame in iterframes.read("video.mp4", height=224, width=224):
@@ -25,7 +27,7 @@ for frame in iterframes.read("video.mp4", height=224, width=224):
 pip install iterframes
 ```
 
-The wheels bundle FFmpeg and work on any CPython from 3.10 on, on Linux
+The wheels bundle FFmpeg and work on any CPython from 3.11 on, on Linux
 (x86_64, aarch64) and macOS (Apple silicon).
 
 ## Documentation

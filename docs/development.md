@@ -65,7 +65,7 @@ environment. Run it again after every change to a `.rs` file.
 
 | Path | Contents |
 | --- | --- |
-| `src/lib.rs` | Python module: `FrameReader` and the error mapping |
+| `src/lib.rs` | Python module: `Frame`, `FrameReader`, and the error mapping |
 | `src/decoder.rs` | Decoding thread: demux, decode, convert to RGB |
 | `iterframes/__init__.py` | `read` and `read_all`, which wrap `FrameReader` |
 | `scripts/build-ffmpeg.sh` | Static FFmpeg build for the wheels |
@@ -113,7 +113,7 @@ compiling the extension.
 ## Wheels
 
 The wheels use the stable ABI of CPython (abi3), so one wheel per platform
-covers every CPython from 3.10 on. To build one locally, with the static
+covers every CPython from 3.11 on. To build one locally, with the static
 FFmpeg from above:
 
 ```console

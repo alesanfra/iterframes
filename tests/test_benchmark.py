@@ -30,3 +30,32 @@ def test_decode_speed(video_path):
 
     ours, theirs = best_of(with_iterframes), best_of(with_pyav)
     print(f"\niterframes {ours:.3f}s, PyAV {theirs:.3f}s")
+
+
+def test_decoding_overlaps_with_work(video_path):
+    """Decoding must run while Python code holds the GIL.
+
+    Upscaling makes each frame slow enough to decode to time reliably.
+    With per-frame work that takes as long as decoding, running the two
+    one after the other would double the time; overlapping them should
+    barely change it.
+    """
+    size = {"height": 1080, "width": 1920}
+
+    def hold_the_gil(seconds):
+        end = time.perf_counter() + seconds
+        while time.perf_counter() < end:
+            pass
+
+    def decode(work=0.0):
+        start = time.perf_counter()
+        count = 0
+        for _ in iterframes.read(video_path, **size):
+            hold_the_gil(work)
+            count += 1
+        return time.perf_counter() - start, count
+
+    decoding, count = decode()
+    total, _ = decode(work=decoding / count)
+    print(f"\ndecoding {decoding:.3f}s, decoding and work {total:.3f}s")
+    assert total < 1.5 * decoding

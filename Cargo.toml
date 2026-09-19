@@ -3,7 +3,7 @@ name = "iterframes"
 version = "0.4.0"
 edition = "2024"
 rust-version = "1.88"
-description = "Python video decoder: iterate over the frames of a video as NumPy arrays"
+description = "Iterate over the frames of a video as NumPy arrays, decoded on a background thread while you process them"
 homepage = "https://github.com/alesanfra/iterframes"
 repository = "https://github.com/alesanfra/iterframes"
 license = "LGPL-3.0-only"
@@ -19,8 +19,8 @@ crate-type = ["cdylib"]
 static = ["ffmpeg/static"]
 
 [dependencies]
-# One wheel per platform for every CPython from 3.10 on.
-pyo3 = { version = "0.29", features = ["abi3-py310"] }
+# One wheel per platform for every CPython from 3.11 on.
+pyo3 = { version = "0.29", features = ["abi3-py311"] }
 crossbeam-channel = "0.5"
 
 [dependencies.ffmpeg]

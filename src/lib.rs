@@ -1,9 +1,11 @@
+use std::ffi::c_int;
 use std::path::PathBuf;
 
 use crossbeam_channel::Receiver;
-use pyo3::exceptions::{PyOSError, PyRuntimeError, PyValueError};
+use ffmpeg::util::frame::video::Video;
+use pyo3::exceptions::{PyBufferError, PyOSError, PyRuntimeError, PyValueError};
+use pyo3::ffi;
 use pyo3::prelude::*;
-use pyo3::types::PyByteArray;
 
 mod decoder;
 
@@ -24,11 +26,79 @@ impl From<Error> for PyErr {
     }
 }
 
+/// A decoded frame of packed RGB24 pixels, exposed through the buffer
+/// protocol as a writable `(height, width, 3)` array of bytes. The pixels
+/// stay in the FFmpeg frame, so `numpy.asarray(frame)` copies nothing.
+#[pyclass(module = "iterframes", frozen)]
+struct Frame {
+    frame: Video,
+    shape: [ffi::Py_ssize_t; 3],
+    strides: [ffi::Py_ssize_t; 3],
+}
+
+impl Frame {
+    /// Wrap `frame`, whose rows the decoder has already packed.
+    fn new(frame: Video) -> Self {
+        let (height, width) = (frame.height() as isize, frame.width() as isize);
+        Self {
+            frame,
+            shape: [height, width, 3],
+            strides: [width * 3, 3, 1],
+        }
+    }
+}
+
+#[pymethods]
+impl Frame {
+    unsafe fn __getbuffer__(
+        slf: Bound<'_, Self>,
+        view: *mut ffi::Py_buffer,
+        flags: c_int,
+    ) -> PyResult<()> {
+        if view.is_null() {
+            return Err(PyBufferError::new_err("view is null"));
+        }
+        let frame = slf.get();
+        let [height, width, channels] = frame.shape;
+        // SAFETY: `view` is non-null and owned by the caller. The pixels
+        // live as long as `frame`, which `view.obj` keeps alive, and nothing
+        // on the Rust side reads or writes them once the frame is wrapped.
+        unsafe {
+            (*view).buf = (*frame.frame.as_ptr()).data[0].cast();
+            (*view).len = height * width * channels;
+            (*view).readonly = 0;
+            (*view).itemsize = 1;
+            (*view).format = if flags & ffi::PyBUF_FORMAT != 0 {
+                c"B".as_ptr().cast_mut()
+            } else {
+                std::ptr::null_mut()
+            };
+            // Without PyBUF_ND the consumer asked for a flat run of bytes,
+            // which the packed rows already are.
+            if flags & ffi::PyBUF_ND != 0 {
+                (*view).ndim = 3;
+                (*view).shape = frame.shape.as_ptr().cast_mut();
+            } else {
+                (*view).ndim = 1;
+                (*view).shape = std::ptr::null_mut();
+            }
+            (*view).strides = if flags & ffi::PyBUF_STRIDES == ffi::PyBUF_STRIDES {
+                frame.strides.as_ptr().cast_mut()
+            } else {
+                std::ptr::null_mut()
+            };
+            (*view).suboffsets = std::ptr::null_mut();
+            (*view).internal = std::ptr::null_mut();
+            (*view).obj = slf.into_any().into_ptr();
+        }
+        Ok(())
+    }
+}
+
 /// Iterator over the frames of a video, decoded on a background thread.
 ///
-/// Each item is a `(buffer, height, width)` tuple, where `buffer` is a
-/// `bytearray` of packed RGB24 pixels. Use `iterframes.read`, which wraps
-/// the buffers in NumPy arrays.
+/// Each item is a `Frame`, which supports the buffer protocol. Use
+/// `iterframes.read`, which wraps the frames in NumPy arrays.
 #[pyclass(module = "iterframes")]
 struct FrameReader {
     frames: Receiver<Message>,
@@ -57,28 +127,12 @@ impl FrameReader {
         slf
     }
 
-    fn __next__<'py>(
-        &self,
-        py: Python<'py>,
-    ) -> PyResult<Option<(Bound<'py, PyByteArray>, u32, u32)>> {
+    fn __next__(&self, py: Python<'_>) -> PyResult<Option<Frame>> {
         // A closed channel means the video is over.
         let Ok(message) = py.detach(|| self.frames.recv()) else {
             return Ok(None);
         };
-        let frame = message?;
-        let (height, width) = (frame.height(), frame.width());
-        let row = width as usize * 3;
-        let stride = frame.stride(0);
-        let data = frame.data(0);
-        // Copy the rows without the padding FFmpeg adds after each of them,
-        // so that the array is contiguous.
-        let buffer = PyByteArray::new_with(py, row * height as usize, |buffer| {
-            for (dst, src) in buffer.chunks_exact_mut(row).zip(data.chunks(stride)) {
-                dst.copy_from_slice(&src[..row]);
-            }
-            Ok(())
-        })?;
-        Ok(Some((buffer, height, width)))
+        Ok(Some(Frame::new(message?)))
     }
 }
 
@@ -88,7 +142,7 @@ mod iterframes {
     use super::*;
 
     #[pymodule_export]
-    use super::FrameReader;
+    use super::{Frame, FrameReader};
 
     #[pymodule_init]
     fn init(module: &Bound<'_, PyModule>) -> PyResult<()> {

@@ -1,16 +1,20 @@
 # iterframes
 
-iterframes reads the frames of a video as NumPy arrays. FFmpeg decodes
-them on a background thread, written in Rust with
-[PyO3](https://pyo3.rs/), while your Python code processes the previous
-ones.
+iterframes is a plain Python loop over the frames of a video, for when
+each frame goes through something expensive, such as a model:
 
 ```python
 import iterframes
 
 for frame in iterframes.read("video.mp4"):
-    ...  # frame is a (height, width, 3) uint8 array of RGB pixels
+    model(frame)  # frame is a (height, width, 3) uint8 array of RGB pixels
 ```
+
+While `model` runs on one frame, FFmpeg decodes the next ones on a
+background thread, written in Rust with [PyO3](https://pyo3.rs/). The
+thread never takes the GIL, so it keeps decoding even while your code
+holds it, and decoding overlaps with your work instead of adding to it.
+The frames reach NumPy without a copy.
 
 ## Installation
 
@@ -19,7 +23,7 @@ pip install iterframes
 ```
 
 The wheels include FFmpeg, so nothing else needs to be installed. There is
-one wheel per platform, which works on every CPython from 3.10 on:
+one wheel per platform, which works on every CPython from 3.11 on:
 
 | Platform | Architectures |
 | --- | --- |

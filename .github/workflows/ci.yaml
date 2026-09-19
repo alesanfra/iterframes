@@ -1,6 +1,6 @@
 # Wheel build matrix adapted from `maturin generate-ci github`. Every wheel
 # links a static FFmpeg built by scripts/build-ffmpeg.sh, and is abi3, so a
-# single wheel per platform covers every CPython from 3.10 on. Edit by hand.
+# single wheel per platform covers every CPython from 3.11 on. Edit by hand.
 name: CI
 
 on:
@@ -82,7 +82,7 @@ jobs:
         shell: bash
         run: |
           # The oldest and newest supported Pythons load the same abi3 wheel.
-          for python in 3.10 3.14; do
+          for python in 3.11 3.14; do
             uv sync --frozen --no-install-project --python $python
             uv pip install --reinstall-package iterframes dist/*.whl
             uv run --no-sync pytest

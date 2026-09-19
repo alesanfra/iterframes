@@ -24,9 +24,11 @@ and `width` is given, the other keeps the size of the video, so the aspect
 ratio changes.
 
 Decoding starts when the first frame is requested, on a background thread
-that runs ahead of your code by up to `prefetch_frames` frames. A larger
-value smooths out frames that take longer to decode, at the cost of
-memory: one 1080p frame takes about 6 MB.
+that runs ahead of your code by up to `prefetch_frames` frames. The thread
+never takes the GIL, so it decodes the next frames while your code
+processes the current one, even when that code holds the GIL. A larger
+`prefetch_frames` smooths out frames that take longer to decode, at the
+cost of memory: one 1080p frame takes about 6 MB.
 
 The decoder stops when the iterator is exhausted or garbage-collected, for
 example after a `break`.
@@ -89,10 +91,24 @@ FFmpeg also spreads the decoding of each video over several threads.
 FrameReader(path, height=None, width=None, prefetch_frames=1)
 ```
 
-The iterator behind `read`. It yields `(buffer, height, width)` tuples,
-where `buffer` is a `bytearray` of `height * width * 3` bytes of packed
-RGB pixels. Use it to skip NumPy, for instance to hand the bytes to
-another library.
+The iterator behind `read`. It yields `Frame` objects.
+
+## Frame
+
+A decoded frame. It holds the pixels and exposes them through the buffer
+protocol as a writable, C-contiguous `(height, width, 3)` block of
+unsigned bytes, so that other libraries can read them without a copy:
+
+```python
+import numpy as np
+from iterframes import FrameReader
+
+for frame in FrameReader("video.mp4"):
+    array = np.asarray(frame)   # what read() yields
+    view = memoryview(frame)    # no NumPy needed
+```
+
+The pixels stay alive as long as the frame or any array or view on it.
 
 ## Constants
 

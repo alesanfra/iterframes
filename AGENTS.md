@@ -9,6 +9,11 @@ Working notes for coding agents (and humans) touching this repository.
 It decodes videos with FFmpeg, through the `ffmpeg-next` crate, and yields
 the frames as NumPy arrays of RGB pixels.
 
+The point of the project is a plain Python loop over the frames in which
+decoding overlaps with expensive work on each frame, such as model
+inference: while the caller processes one frame, a background thread
+decodes the next ones. Keep that true, and say so in the docs.
+
 The package uses maturin's mixed layout: the compiled module is installed
 as `iterframes.iterframes`, and `iterframes/__init__.py` wraps its
 `FrameReader` into `read` and `read_all`.
@@ -18,9 +23,15 @@ as `iterframes.iterframes`, and `iterframes/__init__.py` wraps its
 - `FrameReader::new` spawns a thread (`src/decoder.rs`) that demuxes,
   decodes, and converts each frame to RGB24 with swscale, and sends it
   through a bounded crossbeam channel of `prefetch_frames` slots.
-- `__next__` waits on the channel with the GIL released (`py.detach`),
-  then copies the frame into a `bytearray` without the row padding, so the
-  NumPy array is contiguous.
+- The decoder thread packs the rows of each RGB frame, dropping the
+  padding swscale adds when a row is not a multiple of 32 bytes.
+- `__next__` waits on the channel with the GIL released (`py.detach`) and
+  wraps the frame in a `Frame`, whose buffer protocol hands the pixels to
+  NumPy without a copy. The buffer protocol needs `abi3-py311`.
+- The decoder thread never takes the GIL, so it keeps decoding while
+  Python code holds it. Never attach to Python there (no `Python::attach`,
+  no Python objects in `decoder.rs`); `test_benchmark.py` checks the
+  overlap.
 - Errors travel through the channel and become Python exceptions in
   `impl From<Error> for PyErr`. A closed channel means the end of the video.
 - Dropping the reader closes the channel; the thread notices on its next
@@ -42,7 +53,7 @@ as `iterframes.iterframes`, and `iterframes/__init__.py` wraps its
 
 | Path | Contents |
 | --- | --- |
-| `src/lib.rs` | PyO3 module: `FrameReader`, error mapping, module init |
+| `src/lib.rs` | PyO3 module: `Frame`, `FrameReader`, error mapping, module init |
 | `src/decoder.rs` | Decoding thread |
 | `iterframes/__init__.py` | `read`, `read_all` |
 | `scripts/build-ffmpeg.sh` | Static FFmpeg and dav1d for the wheels |

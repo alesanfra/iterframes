@@ -1,13 +1,24 @@
-"""Iterate over the frames of a video as NumPy arrays."""
+"""Iterate over the frames of a video as NumPy arrays.
+
+The frames are decoded on a background thread that never takes the GIL,
+so the next ones are decoded while your code processes the current one.
+"""
 
 import os
 from typing import Iterator, List, Optional, Union
 
 import numpy as np
 
-from .iterframes import FFMPEG_VERSION, FrameReader, __version__
+from .iterframes import FFMPEG_VERSION, Frame, FrameReader, __version__
 
-__all__ = ["FFMPEG_VERSION", "FrameReader", "__version__", "read", "read_all"]
+__all__ = [
+    "FFMPEG_VERSION",
+    "Frame",
+    "FrameReader",
+    "__version__",
+    "read",
+    "read_all",
+]
 
 PathLike = Union[str, "os.PathLike[str]"]
 
@@ -22,15 +33,13 @@ def read(
 
     Each frame is a ``(height, width, 3)`` array of ``uint8`` RGB pixels.
     ``height`` and ``width`` resize the frames; when only one is given, the
-    other keeps the size of the video. A background thread decodes up to
-    ``prefetch_frames`` frames ahead of the one being processed.
+    other keeps the size of the video. While your code processes a frame, a
+    background thread decodes up to ``prefetch_frames`` frames ahead of it,
+    without taking the GIL.
     """
-    for buffer, frame_height, frame_width in FrameReader(
-        path, height, width, prefetch_frames
-    ):
-        yield np.frombuffer(buffer, dtype=np.uint8).reshape(
-            frame_height, frame_width, 3
-        )
+    # The arrays share memory with the frames, which they keep alive.
+    for frame in FrameReader(path, height, width, prefetch_frames):
+        yield np.asarray(frame)
 
 
 def read_all(

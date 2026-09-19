@@ -95,6 +95,7 @@ impl Converter {
             self.scaler(&decoded)?
                 .run(&decoded, &mut rgb)
                 .map_err(Error::Decode)?;
+            pack(&mut rgb);
             if tx.send(Ok(rgb)).is_err() {
                 return Ok(false);
             }
@@ -124,5 +125,22 @@ impl Converter {
             self.scaler = Some(scaler);
         }
         Ok(self.scaler.as_mut().expect("scaler was just set"))
+    }
+}
+
+/// Move the rows of `frame` next to each other, dropping the padding that
+/// swscale leaves after each of them when the row is not a multiple of 32
+/// bytes. Python then wraps the buffer as a contiguous array with no copy,
+/// and the rare padded frame is fixed here, off the GIL.
+fn pack(frame: &mut Video) {
+    let row = frame.width() as usize * 3;
+    let stride = frame.stride(0);
+    if stride == row {
+        return;
+    }
+    let height = frame.height() as usize;
+    let data = frame.data_mut(0);
+    for y in 1..height {
+        data.copy_within(y * stride..y * stride + row, y * row);
     }
 }

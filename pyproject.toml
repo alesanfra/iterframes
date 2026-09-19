@@ -7,12 +7,12 @@ name = "iterframes"
 authors = [
     { name = "Alessio Sanfratello", email = "sanfra90@gmail.com" },
 ]
-description = "Iterate over the frames of a video as NumPy arrays, decoded by FFmpeg in Rust"
+description = "Iterate over the frames of a video as NumPy arrays, decoded on a background thread while you process them"
 readme = "README.md"
 license = "LGPL-3.0-only"
 license-files = ["LICENSE"]
 keywords = ["video", "decoder", "ffmpeg", "frames", "numpy"]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 classifiers = [
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
