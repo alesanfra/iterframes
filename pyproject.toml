@@ -29,7 +29,7 @@ dependencies = [
 Homepage = "https://github.com/alesanfra/iterframes"
 Source = "https://github.com/alesanfra/iterframes"
 Documentation = "https://iterframes.readthedocs.io"
-Changelog = "https://github.com/alesanfra/iterframes/blob/master/CHANGELOG.md"
+Changelog = "https://github.com/alesanfra/iterframes/blob/main/CHANGELOG.md"
 Issues = "https://github.com/alesanfra/iterframes/issues"
 
 [dependency-groups]

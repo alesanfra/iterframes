@@ -5,7 +5,7 @@ site_url: https://iterframes.readthedocs.io
 
 repo_name: alesanfra/iterframes
 repo_url: https://github.com/alesanfra/iterframes
-edit_uri: edit/master/docs/
+edit_uri: edit/main/docs/
 
 theme:
   name: material
