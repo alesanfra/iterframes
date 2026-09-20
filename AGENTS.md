@@ -17,7 +17,7 @@ decodes the next ones. Keep that true, and say so in the docs.
 
 The package uses maturin's mixed layout: the compiled module is installed
 as `iterframes.iterframes`, and `iterframes/__init__.py` wraps its
-`FrameReader` into `read`, `read_all`, and `read_batches`.
+`FrameReader` into `read` and `read_batches`.
 
 ## How decoding works
 
@@ -41,6 +41,19 @@ as `iterframes.iterframes`, and `iterframes/__init__.py` wraps its
   batch is sent when full, or at the end of the video unless `drop_last`.
   Python gets it as a `Batch`, a 4-dimensional buffer, with no copy. The
   channel then holds batches: `prefetch_frames` rounds up to whole ones.
+- `frames`, or `start`, `stop`, and `step`, pick the frames to decode by
+  number. `start=0` with `step=1` is `Selection::First`, which reads the
+  video straight through and stops early, with no index and no seek: keep
+  that path, since it is the common one. Otherwise the thread indexes the
+  file first (`index` in
+  `src/decoder.rs`), demuxing every packet without decoding it to map each
+  frame to its timestamp and mark the key frames, and `Seeker` decodes each
+  frame asked for from the key frame before it, or goes on from the frame
+  it decoded last when that is closer, or when the stream does not seek. Frames passed on the way are never
+  converted to RGB. The index leaves out the frames before the first key
+  frame, which decoding cannot return either, so frame numbers are those of
+  a plain `read`. A stream that cannot seek, such as raw H.264, is opened
+  again and read from the start (`Source::open`).
 - Errors travel through the channel and become Python exceptions in
   `impl From<Error> for PyErr`. A closed channel means the end of the video.
 - Dropping the reader closes the channel; the thread notices on its next
@@ -85,7 +98,7 @@ as `iterframes.iterframes`, and `iterframes/__init__.py` wraps its
 | `src/decoder.rs` | Decoding thread |
 | `src/ffmpeg.rs` | Safe wrappers over the FFmpeg calls the crate needs |
 | `src/dlpack.rs` | DLPack capsules for the planes of `CudaFrame` |
-| `iterframes/__init__.py` | `read`, `read_all`, `read_batches` |
+| `iterframes/__init__.py` | `read`, `read_batches` |
 | `build.rs` | Builds and links FFmpeg, generates its bindings |
 | `scripts/build-ffmpeg.sh` | Static FFmpeg and dav1d, run by `build.rs` |
 | `tests/` | pytest suite; frames are compared with PyAV |

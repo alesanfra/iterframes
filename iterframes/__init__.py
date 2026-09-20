@@ -5,7 +5,7 @@ so the next ones are decoded while your code processes the current one.
 """
 
 import os
-from typing import Iterator, List, Optional, Union
+from typing import Iterator, Optional, Sequence, Union
 
 import numpy as np
 
@@ -30,7 +30,6 @@ __all__ = [
     "Plane",
     "__version__",
     "read",
-    "read_all",
     "read_batches",
 ]
 
@@ -44,8 +43,15 @@ def read(
     prefetch_frames: int = 1,
     device: str = "cpu",
     on_device: bool = False,
+    frames: Optional[Sequence[int]] = None,
+    start: int = 0,
+    stop: Optional[int] = None,
+    step: int = 1,
 ) -> Iterator[Union[np.ndarray, CudaFrame]]:
     """Yield the frames of the video at ``path``, in order.
+
+    With ``frames``, or ``start``, ``stop``, and ``step``, only those
+    frames are read, in the order asked for.
 
     Each frame is a ``(height, width, 3)`` array of ``uint8`` RGB pixels.
     ``height`` and ``width`` resize the frames; when only one is given, the
@@ -65,9 +71,28 @@ def read(
     instead, as :class:`CudaFrame` objects in NV12 whose planes PyTorch and
     other libraries take through DLPack without a copy. The frames must
     then be decoded on the GPU: other codecs raise ``RuntimeError``.
+
+    ``frames`` reads the frames with those numbers, in that order, instead
+    of the whole video; ``start``, ``stop``, and ``step`` read a slice of
+    it, with the meaning they have when slicing a list. Negative numbers
+    count from the end of the video, and a number the video does not have
+    raises ``IndexError``. ``start=0`` with ``step=1`` reads the video
+    straight through and stops at ``stop``; every other selection indexes
+    the file first, by reading its packets without decoding them, and then
+    decodes each frame from the key frame before it, so frames asked for
+    in order cost no more than reading the video straight through.
     """
     reader = FrameReader(
-        path, height, width, prefetch_frames, device, on_device
+        path,
+        height,
+        width,
+        prefetch_frames,
+        device,
+        on_device,
+        frames=frames if frames is None else list(frames),
+        start=start,
+        stop=stop,
+        step=step,
     )
     if on_device:
         yield from reader
@@ -75,20 +100,6 @@ def read(
     # The arrays share memory with the frames, which they keep alive.
     for frame in reader:
         yield np.asarray(frame)
-
-
-def read_all(
-    path: PathLike,
-    height: Optional[int] = None,
-    width: Optional[int] = None,
-    device: str = "cpu",
-) -> List[np.ndarray]:
-    """Return every frame of the video at ``path`` in a list.
-
-    Takes the same arguments as :func:`read`. The whole video is kept in
-    memory, so use :func:`read` for long videos.
-    """
-    return list(read(path, height, width, prefetch_frames=16, device=device))
 
 
 def read_batches(
@@ -99,6 +110,10 @@ def read_batches(
     prefetch_frames: int = 1,
     device: str = "cpu",
     drop_last: bool = False,
+    frames: Optional[Sequence[int]] = None,
+    start: int = 0,
+    stop: Optional[int] = None,
+    step: int = 1,
 ) -> Iterator[np.ndarray]:
     """Yield the frames of the video at ``path`` in batches, in order.
 
@@ -108,9 +123,11 @@ def read_batches(
     drops it. The frames of a batch have the size of the first frame of the
     video, or ``height`` and ``width``.
 
-    Takes the same arguments as :func:`read`, except ``on_device``. The
-    background thread decodes up to ``prefetch_frames`` frames ahead,
-    rounded up to whole batches.
+    Takes the same arguments as :func:`read`, except ``on_device``, so
+    ``frames``, or ``start``, ``stop``, and ``step``, batch the frames
+    with those numbers instead of the whole video. The background thread
+    decodes up to ``prefetch_frames`` frames ahead, rounded up to whole
+    batches.
     """
     if batch_size < 1:
         raise ValueError("batch_size must be at least 1")
@@ -122,6 +139,10 @@ def read_batches(
         device,
         batch_size=batch_size,
         drop_last=drop_last,
+        frames=frames if frames is None else list(frames),
+        start=start,
+        stop=stop,
+        step=step,
     )
     # The arrays share memory with the batches, which they keep alive.
     for batch in reader:

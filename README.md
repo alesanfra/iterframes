@@ -20,6 +20,7 @@ adding to it, even when your code is pure Python.
 - RGB `uint8` arrays of shape `(height, width, 3)`, or batches of shape
   `(batch, height, width, 3)`, handed to NumPy without a copy.
 - Resizing while decoding, with no separate resize step.
+- Random access: read frames by number, without decoding the rest.
 - Hardware decoding on NVIDIA GPUs (NVDEC) and Apple silicon
   (VideoToolbox); on NVIDIA, frames can stay on the GPU for PyTorch.
 - Wheels for Linux (x86_64, aarch64), macOS (Apple silicon), and Windows,
@@ -38,6 +39,10 @@ for frame in iterframes.read("video.mp4", height=224, width=224):
 # Batches of 12 frames, decoded into one (12, 224, 224, 3) array
 for batch in iterframes.read_batches("video.mp4", 12, height=224, width=224):
     ...
+
+# Frames at given positions, without decoding the whole video
+clip = list(iterframes.read("video.mp4", frames=[0, 30, 60]))
+every_fifth = iterframes.read("video.mp4", start=100, stop=200, step=5)
 ```
 
 ### Hardware decoding
@@ -87,16 +92,15 @@ convert them to RGB there.
 | Pixels | RGB | BGR | RGB | Any format FFmpeg supports |
 | Resize while decoding | Yes | No, with `cv2.resize` after | Yes | Yes, with `reformat` |
 | Batches as one array | Yes, `read_batches` | No | Yes, `get_batch` | No |
-| Seeking and random access | No, start to end only | Yes | Yes, fast | Yes |
+| Seeking and random access | Yes, `frames=[...]` or `start`, `stop`, `step` | Yes | Yes, fast | Yes |
 | Audio, encoding, muxing | No | Encoding with `VideoWriter` | Audio reading | Yes |
 | Hardware decoding | NVIDIA, Apple silicon, in the wheels | Depends on the build and backend | NVIDIA, when built from source | Depends on the build |
 | Latest wheels | Linux, macOS, Windows, CPython 3.11+ | Linux, macOS, Windows | x86_64 only, last release in 2021 | Linux, macOS, Windows |
 
-Pick iterframes when you read videos sequentially and want decoding to
-stay out of the way of your model. Pick decord when you need frames at
-arbitrary positions, such as sampling clips for training, and PyAV when
-you need the rest of FFmpeg: audio, encoding, streams, or precise control
-over the decoder. OpenCV is the natural choice when the rest of the
+Pick iterframes when you read videos sequentially, or sample frames from
+them, and want decoding to stay out of the way of your model. Pick PyAV
+when you need the rest of FFmpeg: audio, encoding, streams, or precise
+control over the decoder. OpenCV is the natural choice when the rest of the
 pipeline already uses it.
 
 ## Installation
@@ -117,8 +121,7 @@ The wheels bundle FFmpeg and work on any CPython from 3.11 on, on Linux
 
 Contributions are welcome. The
 [development guide](https://iterframes.readthedocs.io/en/latest/development/#help-wanted)
-lists features that are waiting for someone to build them, starting with
-fast random access to frames.
+lists features that are waiting for someone to build them.
 
 ## License
 

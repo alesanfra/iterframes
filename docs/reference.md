@@ -5,12 +5,13 @@ Everything lives in the top-level `iterframes` module.
 ## read
 
 ```python
-read(path, height=None, width=None, prefetch_frames=1, device="cpu", on_device=False) -> Iterator[numpy.ndarray]
+read(path, height=None, width=None, prefetch_frames=1, device="cpu", on_device=False, frames=None, start=0, stop=None, step=1) -> Iterator[numpy.ndarray]
 ```
 
-Yields the frames of the video at `path`, in order. Each frame is a
-C-contiguous, writable `numpy.ndarray` of shape `(height, width, 3)` and
-dtype `uint8`, holding RGB pixels.
+Yields the frames of the video at `path`, in order, or with `frames`, or
+`start`, `stop`, and `step`, only those frames, in the order asked for.
+Each frame is a C-contiguous, writable `numpy.ndarray` of shape
+`(height, width, 3)` and dtype `uint8`, holding RGB pixels.
 
 | Argument | Description |
 | --- | --- |
@@ -20,6 +21,8 @@ dtype `uint8`, holding RGB pixels.
 | `prefetch_frames` | How many decoded frames may wait for your code. Defaults to 1 |
 | `device` | Where to decode: `"cpu"`, `"auto"`, or a name from `DEVICES`. Defaults to `"cpu"`. See [Hardware decoding](#hardware-decoding) |
 | `on_device` | With `device="cuda"`, yield `CudaFrame` objects left on the GPU instead of arrays. See [Frames on the GPU](#frames-on-the-gpu) |
+| `frames` | The numbers of the frames to read, in the order to read them. See [Reading frames by number](#reading-frames-by-number) |
+| `start`, `stop`, `step` | The frames to read, as a slice of the video |
 
 Frames are resized with bilinear interpolation. When only one of `height`
 and `width` is given, the other keeps the size of the video, so the aspect
@@ -42,20 +45,10 @@ for frame in iterframes.read("video.mp4", height=270, width=480):
     print(frame.shape)  # (270, 480, 3)
 ```
 
-## read_all
-
-```python
-read_all(path, height=None, width=None, device="cpu") -> list[numpy.ndarray]
-```
-
-Returns every frame of the video in a list. It takes the same arguments as
-[`read`](#read) and keeps the whole video in memory, so use `read` for
-anything but short clips.
-
 ## read_batches
 
 ```python
-read_batches(path, batch_size, height=None, width=None, prefetch_frames=1, device="cpu", drop_last=False) -> Iterator[numpy.ndarray]
+read_batches(path, batch_size, height=None, width=None, prefetch_frames=1, device="cpu", drop_last=False, frames=None, start=0, stop=None, step=1) -> Iterator[numpy.ndarray]
 ```
 
 Yields the frames of the video in batches, in order, for models that take
@@ -79,6 +72,42 @@ for batch in iterframes.read_batches("video.mp4", 12, height=224, width=224):
     print(batch.shape)  # (12, 224, 224, 3), except maybe the last one
 ```
 
+## Reading frames by number
+
+`frames` reads the frames with those numbers, in the order given, instead
+of the whole video, and `start`, `stop`, and `step` read a slice of it,
+with the meaning they have when slicing a list. Negative numbers count
+from the end of the video. The two cannot be used together.
+
+```python
+clip = list(iterframes.read("video.mp4", frames=[0, 30, 60]))
+every_fifth = iterframes.read("video.mp4", start=100, stop=200, step=5)
+thumbnail = next(iterframes.read("video.mp4", frames=[-1]))
+```
+
+Both work with [`read_batches`](#read_batches), which decodes the frames
+straight into the batch:
+
+```python
+batch = next(iterframes.read_batches("video.mp4", 3, frames=[0, 30, 60]))
+assert batch.shape[0] == 3
+```
+
+`start=0` with `step=1` needs no index: the video is read straight through
+and stops at `stop`, which costs what reading it from the start costs.
+
+Every other selection indexes the video first, by reading its packets
+without decoding them, to find where each frame is and which frames
+decoding can start from. Each frame asked for is then decoded from the key
+frame before it, and the frames passed on the way are not converted to
+RGB. Frames asked for in order cost no more than reading the video
+straight through, since the decoder goes on from the frame it decoded last
+whenever that is closer than the key frame.
+
+Frame numbers are those of [`read`](#read): frame `n` is the one `read`
+yields `n`-th. A number the video does not have raises `IndexError`,
+while a slice past the end stops at the last frame, as a list does.
+
 ## Errors
 
 Errors are raised by the first `next()` on the iterator, not by the call
@@ -89,10 +118,11 @@ to `read`, because decoding starts only then.
 | `FileNotFoundError`, `PermissionError`, `OSError` | The file cannot be opened. The exception carries `errno` and `filename` |
 | `ValueError` | The file is not a video FFmpeg can read, or has no video stream |
 | `RuntimeError` | Decoding fails after the video has been opened, for instance on a codec that the build does not include |
+| `IndexError` | `frames` asks for a frame the video does not have |
 
 ```python
 try:
-    frames = iterframes.read_all("missing.mp4")
+    frames = list(iterframes.read("missing.mp4"))
 except FileNotFoundError as error:
     print(error.filename)  # missing.mp4
 ```
@@ -117,7 +147,7 @@ FFmpeg also spreads the decoding of each video over several threads.
 ## FrameReader
 
 ```python
-FrameReader(path, height=None, width=None, prefetch_frames=1, device="cpu", on_device=False, batch_size=None, drop_last=False)
+FrameReader(path, height=None, width=None, prefetch_frames=1, device="cpu", on_device=False, batch_size=None, drop_last=False, frames=None, start=0, stop=None, step=1)
 ```
 
 The iterator behind `read` and `read_batches`. It yields `Frame` objects,

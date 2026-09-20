@@ -47,7 +47,7 @@ for frame in iterframes.read("video.mp4", height=224, width=224):
 Load a short clip into memory at once:
 
 ```python
-frames = iterframes.read_all("clip.mp4")
+frames = list(iterframes.read("clip.mp4"))
 ```
 
 Feed a model 12 frames at a time, decoded into one array:
@@ -55,6 +55,13 @@ Feed a model 12 frames at a time, decoded into one array:
 ```python
 for batch in iterframes.read_batches("video.mp4", 12, height=224, width=224):
     assert batch.shape[1:] == (224, 224, 3)
+```
+
+Read frames at given positions, without decoding the whole video:
+
+```python
+clip = list(iterframes.read("video.mp4", frames=[0, 30, 60]))
+every_fifth = iterframes.read("video.mp4", start=100, stop=200, step=5)
 ```
 
 Stop whenever you like; the decoder stops with the loop:

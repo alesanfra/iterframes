@@ -63,7 +63,7 @@ environment. Run it again after every change to a `.rs` file.
 | `src/lib.rs` | Python module: `Frame`, `Batch`, `FrameReader`, and the error mapping |
 | `src/decoder.rs` | Decoding thread: demux, decode, convert to RGB |
 | `src/ffmpeg.rs` | Safe wrappers over the FFmpeg calls the crate needs |
-| `iterframes/__init__.py` | `read`, `read_all`, and `read_batches`, which wrap `FrameReader` |
+| `iterframes/__init__.py` | `read` and `read_batches`, which wrap `FrameReader` |
 | `scripts/build-ffmpeg.sh` | Static FFmpeg build for the wheels |
 | `tests/` | pytest suite, which checks the frames against PyAV |
 | `docs/` | This site |
@@ -123,26 +123,6 @@ that the wheel works on older distributions.
 
 Features that would fit iterframes but nobody has had time for yet. If
 you want to work on one, open an issue first to agree on the API.
-
-### Fast random access
-
-Read frames at arbitrary positions, as decord does, for instance to
-sample clips for training: `read(path, frames=[0, 30, 60])`, or `start`,
-`stop`, and `step`. The usual approach:
-
-1. When the video is opened, demux every packet without decoding it, which
-   is cheap, to map each frame to its timestamp and find the keyframes.
-2. For each requested frame, seek to the keyframe before it
-   (`avformat_seek_file` with `AVSEEK_FLAG_BACKWARD`), then decode forward
-   to it.
-3. Skip the conversion to RGB of the frames decoded on the way, since it
-   costs more than decoding them.
-4. With sorted requests, decode forward instead of seeking again when the
-   next frame is closer than the next keyframe.
-
-The work belongs in `src/decoder.rs` and `src/ffmpeg.rs`, behind the same
-background thread, so that it also works with `read_batches`. Videos with
-a variable frame rate or broken timestamps need tests of their own.
 
 ### Testing on real hardware
 

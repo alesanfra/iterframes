@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crossbeam_channel::Receiver;
-use pyo3::exceptions::{PyBufferError, PyOSError, PyRuntimeError, PyValueError};
+use pyo3::exceptions::{PyBufferError, PyIndexError, PyOSError, PyRuntimeError, PyValueError};
 use pyo3::ffi;
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
@@ -12,7 +12,7 @@ mod decoder;
 mod dlpack;
 mod ffmpeg;
 
-use decoder::{Batching, CUDA_FORMATS, Decoded, Device, Error, Message};
+use decoder::{Batching, CUDA_FORMATS, Decoded, Device, Error, Message, Selection};
 
 impl From<Error> for PyErr {
     fn from(err: Error) -> PyErr {
@@ -36,6 +36,9 @@ impl From<Error> for PyErr {
             Error::NotOnDevice(reason) => {
                 PyRuntimeError::new_err(format!("cannot keep frames on the GPU: {reason}"))
             }
+            Error::OutOfRange(index, frames) => PyIndexError::new_err(format!(
+                "frame {index} is out of range for a video of {frames} frames"
+            )),
         }
     }
 }
@@ -328,8 +331,9 @@ impl Plane {
 /// Each item is a `Frame`, which supports the buffer protocol, or with
 /// `batch_size`, a `Batch` of that many frames (fewer in the last one,
 /// unless `drop_last`), whose `prefetch_frames` rounds up to whole batches.
-/// Use `iterframes.read` and `iterframes.read_batches`, which wrap them in
-/// NumPy arrays.
+/// `frames`, or `start`, `stop`, and `step`, pick the frames to decode by
+/// number instead of reading the whole video. Use `iterframes.read` and
+/// `iterframes.read_batches`, which wrap them in NumPy arrays.
 #[pyclass(module = "iterframes")]
 struct FrameReader {
     frames: Receiver<Message>,
@@ -340,7 +344,7 @@ impl FrameReader {
     #[new]
     #[pyo3(signature = (
         path, height=None, width=None, prefetch_frames=1, device="cpu", on_device=false,
-        batch_size=None, drop_last=false
+        batch_size=None, drop_last=false, frames=None, start=0, stop=None, step=1
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -352,7 +356,12 @@ impl FrameReader {
         on_device: bool,
         batch_size: Option<usize>,
         drop_last: bool,
+        frames: Option<Vec<isize>>,
+        start: isize,
+        stop: Option<isize>,
+        step: isize,
     ) -> PyResult<Self> {
+        let selection = selection(frames, start, stop, step)?;
         let batching = match batch_size {
             None => None,
             Some(0) => return Err(PyValueError::new_err("batch_size must be at least 1")),
@@ -397,6 +406,7 @@ impl FrameReader {
                 device,
                 on_device,
                 batching,
+                selection,
                 prefetch_frames,
             ),
         })
@@ -417,6 +427,37 @@ impl FrameReader {
             Decoded::Batch(batch) => Py::new(py, Batch::new(batch))?.into_any(),
         };
         Ok(Some(frame))
+    }
+}
+
+/// Which frames to decode, from the arguments Python passes: `frames`
+/// lists them, while `start`, `stop`, and `step` slice them as a list is
+/// sliced. The two ways cannot be mixed.
+fn selection(
+    frames: Option<Vec<isize>>,
+    start: isize,
+    stop: Option<isize>,
+    step: isize,
+) -> PyResult<Selection> {
+    let sliced = start != 0 || stop.is_some() || step != 1;
+    match frames {
+        Some(_) if sliced => Err(PyValueError::new_err(
+            "frames does not go with start, stop, or step",
+        )),
+        Some(frames) => Ok(Selection::Frames(frames)),
+        None if step < 1 => Err(PyValueError::new_err("step must be at least 1")),
+        // Frames counted from the first are read straight through, with
+        // no index and no seeking.
+        None if start == 0 && step == 1 && stop.is_some_and(|stop| stop >= 0) => {
+            Ok(Selection::First(stop.expect("a stop of its own") as usize))
+        }
+        None if sliced => Ok(Selection::Range {
+            start,
+            stop,
+            step: step as usize,
+        }),
+        // Reading the whole video needs no index and no seeking.
+        None => Ok(Selection::All),
     }
 }
 
