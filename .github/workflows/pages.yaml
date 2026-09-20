@@ -1,0 +1,61 @@
+# Publishes web/ to https://alesanfra.github.io/iterframes/.
+#
+# The page is plain HTML, CSS and JavaScript, so there is nothing to build:
+# the job uploads the directory and hands it to Pages. It runs only when
+# web/ changes, and ci.yaml ignores web/ for the same reason, so a change
+# to one never spends minutes on the other.
+#
+# Pages must be set to "GitHub Actions" under Settings > Pages for the
+# deployment to be accepted.
+name: Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths: &page
+      - 'web/**'
+      - '.github/workflows/pages.yaml'
+      - '.github/scripts/check_site.py'
+  pull_request:
+    paths: *page
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deployment at a time, and never cancel one halfway: a cancelled
+# deployment leaves the live site on the previous version.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check the page
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check every local link and asset resolves
+        run: python3 .github/scripts/check_site.py web
+
+  deploy:
+    name: Deploy to GitHub Pages
+    # Pull requests get the check above; only main is published.
+    if: ${{ github.event_name != 'pull_request' }}
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: web
+      - id: deployment
+        uses: actions/deploy-pages@v5

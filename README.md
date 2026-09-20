@@ -20,7 +20,9 @@ adding to it, even when your code is pure Python. `pip install iterframes`
 brings FFmpeg with it: nothing else to install, no system packages, no
 `ffmpeg` binary to call.
 
-The documentation is at
+The landing page at
+[alesanfra.github.io/iterframes](https://alesanfra.github.io/iterframes/)
+shows what the decoder does while your loop runs. The documentation is at
 [iterframes.readthedocs.io](https://iterframes.readthedocs.io): the
 [reference](https://iterframes.readthedocs.io/en/latest/reference/)
 documents every argument and error, and the

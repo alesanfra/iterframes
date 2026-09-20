@@ -8,11 +8,20 @@ name: CI
 # updates its release pull request, and merging that pull request creates
 # the tag and a draft GitHub release, then the jobs below attach the
 # wheels, publish them to PyPI, and publish the release.
+# The landing page has its own workflow, and nothing here builds it, so a
+# commit that only touches web/ skips the wheel matrix. release-please skips
+# with it, and picks those commits up on the next push that does build
+# something.
 on:
   push:
     branches:
       - main
+    paths-ignore: &page
+      - 'web/**'
+      - '.github/workflows/pages.yaml'
+      - '.github/scripts/check_site.py'
   pull_request:
+    paths-ignore: *page
   workflow_dispatch:
 
 permissions:

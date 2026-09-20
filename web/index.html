@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0f1820">
+<title>iterframes: video frames as NumPy arrays, decoded ahead of your loop</title>
+<meta name="description" content="iterframes decodes video on a Rust thread that never takes the GIL, and hands your Python loop frames as NumPy arrays with no copy. Random access by frame number, hardware decoding, FFmpeg in the wheel.">
+<link rel="canonical" href="https://alesanfra.github.io/iterframes/">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://alesanfra.github.io/iterframes/">
+<meta property="og:title" content="iterframes: video frames as NumPy arrays">
+<meta property="og:description" content="A Rust thread decodes the next frames while your model works on this one. pip install iterframes, FFmpeg included.">
+<meta property="og:image" content="https://alesanfra.github.io/iterframes/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="assets/frames.webp" as="image">
+<link rel="stylesheet" href="styles.css">
+<!-- Analytics: none. To add a cookieless counter later, drop the snippet here.
+     GoatCounter (hosted, free, no cookies, no consent banner):
+     <script data-goatcounter="https://NAME.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script> -->
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="wrap topbar-in">
+    <a class="brand" href="./">
+      <svg class="brand-mark" width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
+        <rect x="1.5" y="4.5" width="19" height="13" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <path d="M5 4.5v13M9 4.5v13M13 4.5v13M17 4.5v13" stroke="currentColor" stroke-width="1" opacity=".45"/>
+      </svg>
+      <span>iterframes</span>
+    </a>
+    <nav class="topnav">
+      <a href="https://iterframes.readthedocs.io">Documentation</a>
+      <a href="https://pypi.org/project/iterframes/">PyPI</a>
+      <a href="https://github.com/alesanfra/iterframes">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="hero wrap">
+  <h1>Your loop never waits<br>for the decoder.</h1>
+  <p class="lede">
+    Video frames reach your Python code as NumPy arrays, decoded by a Rust
+    thread that has already moved on to the next ones. That thread never takes
+    the GIL, so decoding overlaps your work instead of adding to it.
+  </p>
+
+  <div class="actions">
+    <button class="copy" type="button" data-copy="pip install iterframes">
+      <code>pip install iterframes</code>
+      <span class="copy-state" aria-live="polite">Copy</span>
+    </button>
+    <a class="ghost" href="https://iterframes.readthedocs.io">Documentation</a>
+    <a class="ghost" href="https://github.com/alesanfra/iterframes">Source</a>
+  </div>
+
+  <figure class="trace" id="trace">
+    <div class="trace-head">
+      <h2 class="trace-title">Twelve frames through the same loop</h2>
+      <button class="replay" type="button" id="replay">Play again</button>
+    </div>
+
+    <div class="ruler" aria-hidden="true">
+      <span style="--at:0">0</span>
+      <span style="--at:.2308">0.5&times;</span>
+      <span style="--at:.4615">1&times;</span>
+      <span style="--at:.6923">1.5&times;</span>
+      <span style="--at:.9231">2&times;</span>
+    </div>
+
+    <div class="group" id="group-serial">
+      <div class="group-head">
+        <h3>Without iterframes</h3>
+        <p>Your loop decodes a frame, works on it, then decodes the next one. The
+          two costs are paid one after the other.</p>
+        <span class="group-time" id="time-serial"></span>
+      </div>
+      <div class="lanes">
+        <div class="lane">
+          <span class="lane-name">Your&nbsp;loop</span>
+          <div class="track" id="lane-serial"></div>
+        </div>
+        <div class="lane lane-film">
+          <span class="lane-name">Frames&nbsp;out</span>
+          <div class="strip" id="strip-serial" role="img"
+               aria-label="Twelve frames arriving one every two decode times"></div>
+        </div>
+        <div class="veil"></div>
+        <div class="playhead"></div>
+      </div>
+    </div>
+
+    <div class="group" id="group-overlap">
+      <div class="group-head">
+        <h3>With iterframes</h3>
+        <p>The decoder thread runs ahead of you. By the time your loop asks for the
+          next frame, that frame is already decoded and waiting in memory.</p>
+        <span class="group-time" id="time-overlap"></span>
+      </div>
+      <div class="lanes">
+        <div class="lane">
+          <span class="lane-name">Your&nbsp;loop</span>
+          <div class="track" id="lane-overlap"></div>
+        </div>
+        <div class="lane">
+          <span class="lane-name">Decoder&nbsp;thread</span>
+          <div class="track" id="lane-decoder"></div>
+        </div>
+        <div class="lane lane-film">
+          <span class="lane-name">Frames&nbsp;out</span>
+          <div class="strip" id="strip-overlap" role="img"
+               aria-label="Twelve frames arriving back to back, with no gap between them"></div>
+        </div>
+        <div class="veil"></div>
+        <div class="playhead"></div>
+      </div>
+    </div>
+
+    <figcaption class="trace-foot">
+      <p>
+        Both runs do the same work on the same twelve frames. Only the waiting
+        is different: one loop waits for the decoder, the other finds every
+        frame already there.
+      </p>
+    </figcaption>
+  </figure>
+
+  <p class="note">
+    Both timelines are drawn from the overlap benchmark in
+    <a href="https://github.com/alesanfra/iterframes/blob/main/tests/test_benchmark.py">tests/test_benchmark.py</a>,
+    where per-frame work as expensive as decoding made the whole run 16% longer
+    instead of twice as long. 1&times; is the time the same video takes to decode
+    with nothing else happening.
+  </p>
+</section>
+
+<section class="wrap band" id="loop">
+  <h2>The loop you already write</h2>
+  <p class="sub">
+    <code>read</code> returns an iterator. Nothing to open, nothing to close,
+    no callback to register: the background thread starts with the first
+    <code>next</code> and stops when you stop.
+  </p>
+
+  <div class="cards">
+    <article class="card">
+      <h3>Every frame as an array</h3>
+      <p>
+        Each frame is a <code>(height, width, 3)</code> block of RGB
+        <code>uint8</code>, read straight out of FFmpeg's buffer.
+      </p>
+<pre><code><span class="k">for</span> frame <span class="k">in</span> iterframes.<span class="f">read</span>(video):
+    <span class="f">model</span>(frame)</code></pre>
+    </article>
+
+    <article class="card">
+      <h3>Resized while it decodes</h3>
+      <p>
+        Ask for a size and FFmpeg scales the frame on its way out, instead of a
+        <code>cv2.resize</code> in your loop.
+      </p>
+<pre><code>iterframes.<span class="f">read</span>(video,
+                 height=<span class="n">224</span>,
+                 width=<span class="n">224</span>)</code></pre>
+    </article>
+
+    <article class="card">
+      <h3>Batches in one block</h3>
+      <p>
+        <code>read_batches</code> writes a whole batch into a single allocation,
+        ready to hand to a model without stacking anything.
+      </p>
+<pre><code>iterframes.<span class="f">read_batches</span>(video, <span class="n">12</span>)
+<span class="c"># (12, 224, 224, 3)</span></code></pre>
+    </article>
+
+    <article class="card">
+      <h3>Stop whenever you like</h3>
+      <p>
+        Break out of the loop and the decoder thread notices on its next send
+        and returns. Nothing is decoded that you never asked for.
+      </p>
+<pre><code><span class="k">for</span> index, frame <span class="k">in</span> <span class="f">enumerate</span>(reader):
+    <span class="k">if</span> index == <span class="n">100</span>:
+        <span class="k">break</span></code></pre>
+    </article>
+  </div>
+
+  <p class="note">
+    The wheels carry FFmpeg with them. No system packages, no
+    <code>ffmpeg</code> binary to call, nothing to match versions with.
+  </p>
+</section>
+
+<section class="wrap band" id="seek">
+  <h2>Ask for frame 11,711 and pay for twelve frames</h2>
+  <p class="sub">
+    Give <code>read</code> a list of frame numbers, or a <code>start</code>,
+    <code>stop</code> and <code>step</code>, and iterframes reads only what it
+    has to. Here is what it does with
+    <code>frames=[934,&nbsp;4522,&nbsp;11711]</code> on a ten minute video.
+  </p>
+
+  <figure class="seek" id="seekdemo">
+    <div class="counters">
+      <div class="counter">
+        <span class="counter-value" id="count-requested">3</span>
+        <span class="counter-label">Frames requested</span>
+      </div>
+      <div class="counter" data-kind="decoded">
+        <span class="counter-value" id="count-decoded">0</span>
+        <span class="counter-label">Frames decoded</span>
+      </div>
+      <div class="counter">
+        <span class="counter-value" id="count-skipped">14,316</span>
+        <span class="counter-label">Frames never touched</span>
+      </div>
+    </div>
+
+    <div class="film" id="film">
+      <div class="film-ticks" aria-hidden="true"></div>
+      <div class="film-scan" id="film-scan"></div>
+      <div class="film-runs" id="film-runs"></div>
+      <div class="film-marks" id="film-marks"></div>
+    </div>
+    <div class="film-axis" aria-hidden="true"><span>Frame 0</span><span>Frame 14,316</span></div>
+
+    <div class="zoom" id="zoom">
+      <p class="zoom-title" id="zoom-title">Nothing decoded yet.</p>
+      <div class="zoom-track">
+        <div class="zoom-jump" id="zoom-jump"><span></span></div>
+        <div class="zoom-cells" id="zoom-cells"></div>
+      </div>
+      <div class="zoom-keys">
+        <span class="key key-kf">Key frame</span>
+        <span class="key key-thrown">Decoded, then thrown away</span>
+        <span class="key key-kept">Kept</span>
+      </div>
+    </div>
+
+    <ol class="steps" id="seek-steps">
+      <li><span class="dot"></span><b>Index the file once.</b> Every packet is demuxed and
+        none is decoded, which is enough to learn where each frame sits and which
+        frames are key frames.</li>
+      <li><span class="dot"></span><b>Jump back to a key frame.</b> Frame 934 cannot be
+        decoded on its own, so the decoder seeks to frame 900, the key frame in
+        front of it.</li>
+      <li><span class="dot"></span><b>Decode forward and drop.</b> The frames in between are
+        decoded so the next one can be, then thrown away without ever being
+        converted to RGB.</li>
+      <li><span class="dot"></span><b>Hand over three frames.</b> 70 frames decoded, 14,246
+        never read at all.</li>
+    </ol>
+
+    <div class="catch" id="catch"></div>
+
+    <figcaption class="seek-foot">
+      <pre class="inline-code"><code>iterframes.<span class="f">read</span>(<span class="s">"bunny.mp4"</span>, frames=[<span class="n">934</span>, <span class="n">4522</span>, <span class="n">11711</span>])</code></pre>
+      <button class="replay" type="button" id="seek-replay">Play again</button>
+    </figcaption>
+  </figure>
+
+  <p class="note">
+    Negative numbers count from the end, frame <code>n</code> is the one a plain
+    <code>read</code> yields <code>n</code>th, and frames asked for in order cost
+    no more than reading the video straight through.
+  </p>
+</section>
+
+<section class="wrap band" id="hardware">
+  <h2>Decode on the GPU</h2>
+  <p class="sub">
+    Pass <code>device</code> and the decoding leaves the CPU, which then stays
+    free for your model. The device names are PyTorch's, and both decoders are
+    already inside the wheel.
+  </p>
+
+  <div class="paths">
+    <svg viewBox="0 0 760 340" class="pathsvg" role="img" aria-labelledby="paths-desc">
+      <desc id="paths-desc">Three paths out of the same file. On the CPU, packets are decoded and scaled by swscale and land in host memory as a NumPy array. On NVIDIA, NVDEC decodes and resizes on the GPU, and the frame either reaches PyTorch through DLPack without leaving the GPU or is copied to the host as a NumPy array. On Apple silicon, VideoToolbox decodes and the frame arrives in host memory as a NumPy array.</desc>
+
+      <g class="node" transform="translate(0,150)">
+        <rect width="104" height="48" rx="4"/>
+        <text x="52" y="20">clip.mp4</text>
+        <text x="52" y="35" class="small">H.264 packets</text>
+      </g>
+
+      <path class="wire cpu" d="M104 168 H128 V76 H184"/>
+      <path class="wire gpu" d="M104 176 H128 V176 H184"/>
+      <path class="wire gpu" d="M128 176 V288 H184"/>
+
+      <text class="tag cpu" x="272" y="44">device="cpu"</text>
+      <g class="node cpu" transform="translate(184,52)">
+        <rect width="176" height="48" rx="4"/>
+        <text x="88" y="20">CPU decoder</text>
+        <text x="88" y="35" class="small">Swscale resizes and converts</text>
+      </g>
+      <path class="wire cpu" d="M360 76 H400"/>
+      <g class="node cpu" transform="translate(400,52)">
+        <rect width="136" height="48" rx="4"/>
+        <text x="68" y="20">Host memory</text>
+        <text x="68" y="35" class="small">RGB24, rows unpadded</text>
+      </g>
+      <path class="wire cpu" d="M536 76 H576"/>
+      <g class="node out" transform="translate(576,52)">
+        <rect width="176" height="48" rx="4"/>
+        <text x="88" y="20">NumPy array</text>
+        <text x="88" y="35" class="small">No copy</text>
+      </g>
+
+      <text class="tag gpu" x="272" y="144">device="cuda"</text>
+      <g class="node gpu" transform="translate(184,152)">
+        <rect width="176" height="48" rx="4"/>
+        <text x="88" y="20">NVDEC</text>
+        <text x="88" y="35" class="small">Decodes and resizes on the GPU</text>
+      </g>
+      <path class="wire gpu" d="M360 176 H400"/>
+      <g class="node gpu" transform="translate(400,152)">
+        <rect width="136" height="48" rx="4"/>
+        <text x="68" y="20">GPU memory</text>
+        <text x="68" y="35" class="small">NV12, Y and UV planes</text>
+      </g>
+      <path class="wire gpu" d="M536 176 H556 V148 H576"/>
+      <path class="wire gpu" d="M556 176 V204 H576"/>
+      <g class="node out gpu" transform="translate(576,126)">
+        <rect width="176" height="44" rx="4"/>
+        <text x="88" y="18">Torch tensor</text>
+        <text x="88" y="33" class="small">DLPack, stays on the GPU</text>
+      </g>
+      <g class="node out" transform="translate(576,182)">
+        <rect width="176" height="44" rx="4"/>
+        <text x="88" y="18">NumPy array</text>
+        <text x="88" y="33" class="small">Copied to the host</text>
+      </g>
+
+      <text class="tag gpu" x="272" y="256">device="mps"</text>
+      <g class="node gpu" transform="translate(184,264)">
+        <rect width="176" height="48" rx="4"/>
+        <text x="88" y="20">VideoToolbox</text>
+        <text x="88" y="35" class="small">Apple's media engine decodes</text>
+      </g>
+      <path class="wire gpu" d="M360 288 H400"/>
+      <g class="node gpu" transform="translate(400,264)">
+        <rect width="136" height="48" rx="4"/>
+        <text x="68" y="20">Host memory</text>
+        <text x="68" y="35" class="small">RGB24</text>
+      </g>
+      <path class="wire gpu" d="M536 288 H576"/>
+      <g class="node out" transform="translate(576,264)">
+        <rect width="176" height="48" rx="4"/>
+        <text x="88" y="20">NumPy array</text>
+        <text x="88" y="35" class="small">No copy</text>
+      </g>
+    </svg>
+  </div>
+
+  <div class="cards">
+    <article class="card">
+      <h3>NVIDIA, through NVDEC</h3>
+      <p>
+        Linux and Windows. The driver is loaded at run time, and the GPU resizes
+        the frame as well when you ask for a size. With
+        <code>on_device=True</code> the planes never leave the GPU: PyTorch takes
+        them through DLPack.
+      </p>
+<pre><code><span class="k">for</span> frame <span class="k">in</span> iterframes.<span class="f">read</span>(video, device=<span class="s">"cuda"</span>,
+                              on_device=<span class="k">True</span>):
+    y = torch.<span class="f">from_dlpack</span>(frame.y)
+    uv = torch.<span class="f">from_dlpack</span>(frame.uv)</code></pre>
+    </article>
+
+    <article class="card">
+      <h3>Apple silicon, through VideoToolbox</h3>
+      <p>
+        macOS on Apple silicon, on the media engine rather than the CPU cores.
+        Frames arrive in host memory as ordinary NumPy arrays, exactly as they do
+        on the CPU path.
+      </p>
+<pre><code><span class="k">for</span> frame <span class="k">in</span> iterframes.<span class="f">read</span>(video, device=<span class="s">"mps"</span>):
+    <span class="f">model</span>(frame)</code></pre>
+    </article>
+  </div>
+
+  <p class="note">
+    <code>device="auto"</code> takes whatever the machine has and falls back to
+    the CPU, and <code>iterframes.DEVICES</code> says what that turned out to be.
+    A GPU saves CPU time but is not always faster than the CPU decoder, so
+    measure both.
+  </p>
+</section>
+
+<section class="wrap band" id="nocopy">
+  <h2>The array is FFmpeg's buffer</h2>
+  <div class="split">
+    <div class="split-text">
+      <p>
+        RGB frames are allocated with an alignment of one, so their rows carry no
+        padding and Python can read them as contiguous memory. The frame object
+        implements the buffer protocol: NumPy wraps the same bytes FFmpeg wrote,
+        and nothing is copied between the decoder and your model.
+      </p>
+      <p>
+        With <code>read_batches</code>, swscale writes every frame of a batch into
+        its slice of one allocation, so a batch reaches you as a single
+        four-dimensional array rather than a list to stack.
+      </p>
+    </div>
+    <div class="split-diagram">
+      <svg viewBox="-10 0 380 152" class="memsvg" role="img" aria-labelledby="mem-desc">
+        <desc id="mem-desc">One allocation holds twelve frames back to back; the NumPy array is an outline drawn around the same bytes.</desc>
+        <text class="small" x="0" y="14">One allocation, 12 &#215; h &#215; w &#215; 3 bytes</text>
+        <g class="cells">
+          <rect x="0" y="30" width="26" height="44" rx="2"/><rect x="30" y="30" width="26" height="44" rx="2"/>
+          <rect x="60" y="30" width="26" height="44" rx="2"/><rect x="90" y="30" width="26" height="44" rx="2"/>
+          <rect x="120" y="30" width="26" height="44" rx="2"/><rect x="150" y="30" width="26" height="44" rx="2"/>
+          <rect x="180" y="30" width="26" height="44" rx="2"/><rect x="210" y="30" width="26" height="44" rx="2"/>
+          <rect x="240" y="30" width="26" height="44" rx="2"/><rect x="270" y="30" width="26" height="44" rx="2"/>
+          <rect x="300" y="30" width="26" height="44" rx="2"/><rect x="330" y="30" width="26" height="44" rx="2"/>
+        </g>
+        <rect class="view" x="-7" y="23" width="370" height="58" rx="4"/>
+        <path class="leader" d="M-7 81 V96"/>
+        <text class="small view-label" x="0" y="110">Numpy.asarray(batch) wraps the same bytes, shape (12, h, w, 3)</text>
+        <text class="small strike" x="0" y="136">Nothing is copied between the decoder and your model</text>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<section class="wrap band" id="compare">
+  <h2>Where iterframes fits</h2>
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr><th scope="col"></th><th scope="col" class="us">iterframes</th><th scope="col">OpenCV <code>VideoCapture</code></th><th scope="col">decord</th><th scope="col">PyAV</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Decoding runs</th><td class="us">Ahead of your code, on a background thread</td><td>When you call <code>read()</code></td><td>When you index the reader</td><td>When you ask for the next frame</td></tr>
+        <tr><th scope="row">Pixels</th><td class="us">RGB</td><td>BGR</td><td>RGB</td><td>Any format FFmpeg supports</td></tr>
+        <tr><th scope="row">Resize while decoding</th><td class="us">Yes</td><td>No, <code>cv2.resize</code> after</td><td>Yes</td><td>Yes, with <code>reformat</code></td></tr>
+        <tr><th scope="row">Batches as one array</th><td class="us">Yes</td><td>No</td><td>Yes</td><td>No</td></tr>
+        <tr><th scope="row">Random access</th><td class="us">Yes, by frame number, indexed</td><td>Yes, by frame number</td><td>Yes, by frame number, indexed</td><td>Yes, by timestamp</td></tr>
+        <tr><th scope="row">Audio, encoding, muxing</th><td class="us">No</td><td>Encoding with <code>VideoWriter</code></td><td>Audio reading</td><td>Yes</td></tr>
+        <tr><th scope="row">Hardware decoding</th><td class="us">NVIDIA and Apple silicon, in the wheels</td><td>Depends on the build</td><td>NVIDIA, built from source</td><td>Depends on the build</td></tr>
+        <tr><th scope="row">Platforms</th><td class="us">Linux x86_64 and aarch64, macOS on Apple silicon, Windows x86_64</td><td>Linux, macOS and Windows, x86_64 and arm64</td><td>Linux, macOS on Intel and Windows, x86_64 only</td><td>Linux, macOS and Windows, x86_64 and arm64</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">
+    Reach for PyAV when you need the rest of FFmpeg: audio, encoding, streams,
+    precise control over the decoder. OpenCV is the natural choice when the rest
+    of the pipeline already uses it.
+  </p>
+</section>
+
+<section class="wrap closing">
+  <h2>Start reading frames</h2>
+  <button class="copy big" type="button" data-copy="pip install iterframes">
+    <code>pip install iterframes</code>
+    <span class="copy-state" aria-live="polite">Copy</span>
+  </button>
+  <p class="sub">
+    Wheels for Linux (x86_64, aarch64), macOS on Apple silicon and Windows, for
+    every CPython from 3.11 on. Other platforms build from source, FFmpeg
+    included.
+  </p>
+</section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap foot-in">
+    <p>
+      iterframes is <a href="https://github.com/alesanfra/iterframes/blob/main/LICENSE">LGPL-3.0</a>.
+      The wheels bundle <a href="https://ffmpeg.org/">FFmpeg</a>, built under the LGPL, and
+      <a href="https://code.videolan.org/videolan/dav1d">dav1d</a>, under the BSD 2-clause license.
+    </p>
+    <p>
+      Frames on this page come from
+      <a href="https://peach.blender.org/">Big Buck Bunny</a>, &copy; Blender
+      Foundation, <a href="https://creativecommons.org/licenses/by/3.0/">CC BY 3.0</a>.
+    </p>
+    <nav class="foot-nav">
+      <a href="https://iterframes.readthedocs.io">Documentation</a>
+      <a href="https://pypi.org/project/iterframes/">PyPI</a>
+      <a href="https://github.com/alesanfra/iterframes">GitHub</a>
+    </nav>
+  </div>
+</footer>
+
+<script src="main.js" defer></script>
+</body>
+</html>

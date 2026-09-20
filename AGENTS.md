@@ -103,6 +103,7 @@ as `iterframes.iterframes`, and `iterframes/__init__.py` wraps its
 | `scripts/build-ffmpeg.sh` | Static FFmpeg and dav1d, run by `build.rs` |
 | `tests/` | pytest suite; frames are compared with PyAV |
 | `docs/` | MkDocs site published on Read the Docs |
+| `web/` | Landing page published on GitHub Pages |
 
 ## Environment
 
@@ -144,6 +145,20 @@ Three pages: `index.md` (overview), `reference.md` (API and errors),
 built module; check them instead of writing them from memory. Keep the
 text short, in American English, with no performance claims that have not
 been measured.
+
+## Landing page
+
+`web/` is the page at
+[alesanfra.github.io/iterframes](https://alesanfra.github.io/iterframes/):
+plain HTML, CSS and JavaScript, no build step, no framework, no web fonts and
+no third-party script. `.github/workflows/pages.yaml` uploads the directory
+and runs only when it changes; `ci.yaml` ignores it, so neither spends minutes
+on the other. Its two animated diagrams are built from constants at the top of
+`main.js`, and their captions are computed from the same constants, so a
+number cannot appear in the drawing and the prose with two different values.
+`web/README.md` has the `ffmpeg` commands that made the images.
+
+Keep its claims to what the benchmarks measured, as in the docs.
 
 ## Conventions
 
