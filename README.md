@@ -20,6 +20,13 @@ adding to it, even when your code is pure Python. `pip install iterframes`
 brings FFmpeg with it: nothing else to install, no system packages, no
 `ffmpeg` binary to call.
 
+The documentation is at
+[iterframes.readthedocs.io](https://iterframes.readthedocs.io): the
+[reference](https://iterframes.readthedocs.io/en/latest/reference/)
+documents every argument and error, and the
+[development guide](https://iterframes.readthedocs.io/en/latest/development/)
+covers building from source.
+
 ## Numbers
 
 One video, 901 frames of 480x270 H.264, decoded and converted to RGB,
@@ -150,11 +157,6 @@ pip install iterframes
 The wheels bundle FFmpeg and work on any CPython from 3.11 on, on Linux
 (x86_64, aarch64), macOS (Apple silicon), and Windows (x86_64). Other
 platforms build from source, FFmpeg included.
-
-## Documentation
-
-<https://iterframes.readthedocs.io>: [reference](https://iterframes.readthedocs.io/en/latest/reference/) and
-[development guide](https://iterframes.readthedocs.io/en/latest/development/).
 
 ## Contributing
 
