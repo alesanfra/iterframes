@@ -153,6 +153,19 @@ built module; check them instead of writing them from memory. Keep the
 text short, in American English, with no performance claims that have not
 been measured.
 
+The landing page in `web/` is part of the docs: whenever an argument, a
+default, or the behavior of a feature changes, update it in the same
+change as the code, and say so in the pull request. Its diagrams are
+drawn from the numbers declared in `web/main.js`, so change the number
+and let the drawing and the captions follow; never write a figure into
+the HTML that the script also computes. `web/README.md` lists those
+numbers and the files. Check the result in a browser before proposing the
+change: open `web/index.html`, or serve the directory with
+`python3 -m http.server --directory web`. The page has no build step and no
+third-party request: its two typefaces are self-hosted woff2 files in
+`web/assets/fonts/`, and everything else is plain HTML, CSS, and JavaScript.
+`web/README.md` describes the look and the colour rules; keep them rather
+than restyling one component on its own.
 
 ## Landing page
 

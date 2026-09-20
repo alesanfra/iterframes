@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>og</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  html, body { margin: 0; }
+  body { width: 1200px; height: 630px; overflow: hidden; }
+  .og {
+    box-sizing: border-box; width: 1200px; height: 630px;
+    padding: 76px 84px 0; position: relative;
+    background: var(--bg);
+    background-image:
+      radial-gradient(900px 520px at 20% -12%, #fffaf0 0%, transparent 66%),
+      radial-gradient(640px 360px at 98% 0%, #fdf6e8 0%, transparent 60%);
+  }
+  .og .badge { margin: 0 0 26px; max-width: none; white-space: nowrap; font-size: 17px; padding: 9px 18px 9px 15px; }
+  .og .badge::before { width: 9px; height: 9px; }
+  .og h1 { font-size: 78px; line-height: 1.02; letter-spacing: -.035em; margin: 0 0 26px; }
+  .og .lede-og { margin: 0; font-size: 25px; line-height: 1.45; color: var(--dim); max-width: 24ch; }
+  .og .slug {
+    position: absolute; right: 84px; bottom: 122px;
+    display: inline-flex; align-items: center; gap: 16px;
+    background: linear-gradient(180deg, #c9630b 0%, var(--frame) 56%, #94480a 100%);
+    color: #fff; border-radius: 10px; padding: 18px 22px;
+    font-family: var(--mono); font-size: 24px; font-weight: 700; letter-spacing: -.03em;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / .3),
+      0 2px 4px rgb(60 42 16 / .2),
+      0 20px 34px -16px rgb(150 74 8 / .7);
+  }
+  .og .og-strip {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 84px;
+    background-color: var(--bg-3);
+    background-image:
+      repeating-linear-gradient(90deg, rgb(60 42 16 / .22) 0 8px, transparent 8px 26px),
+      repeating-linear-gradient(90deg, rgb(60 42 16 / .22) 0 8px, transparent 8px 26px),
+      repeating-linear-gradient(90deg, rgb(var(--frame-rgb) / .5) 0 2px, transparent 2px 26px);
+    background-size: 100% 8px, 100% 8px, 100% 100%;
+    background-position: 12px 9px, 12px calc(100% - 9px), 0 0;
+    background-repeat: repeat-x;
+    box-shadow: inset 0 1px 3px rgb(60 42 16 / .16);
+  }
+</style>
+<div class="og">
+  <p class="badge">Rust decoder for Python &middot; v0.5.0</p>
+  <h1>Your loop never waits<br>for the decoder.</h1>
+  <p class="lede-og">Video frames as NumPy arrays, decoded ahead of your code.</p>
+  <span class="slug">pip install iterframes</span>
+  <span class="og-strip"></span>
+</div>

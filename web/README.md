@@ -17,18 +17,46 @@ something inside it changes. `ci.yaml` ignores it for the same reason.
 | `main.js` | The two animated diagrams and the copy buttons |
 | `assets/frames.webp` | Sprite sheet, 12 frames of 160x90 in a row |
 | `assets/scenes.webp` | Sprite sheet, frames 934, 4522 and 11711 at 240x135 |
-| `assets/og.png` | Social card, 1200x630 |
+| `assets/og.png` | Social card, 1200x630, rendered from `og-card.html` |
+| `og-card.html` | Source of the social card; nothing links to it |
 | `assets/favicon.svg` | Favicon |
 
 Animations are built from numbers declared in `main.js` (`FRAMES`, `DECODE`,
-`WORK`, `TOTAL_FRAMES`, `GOP`, `WANTED`), and the captions are computed from
-the same numbers. Change a number and the drawing and the text move together.
+`WORK`, `TOTAL_FRAMES`, `GOP`, `WANTED`, `APPROXIMATE`), and the captions are
+computed from the same numbers.
+
+The random access demo runs in two modes, picked with the buttons above it:
+`Exact` decodes from the key frame in front of each number, and
+`approximate=45` reads the nearest key frame within `APPROXIMATE` frames.
+`seekPlan` builds one plan per mode, and the steps, the counters, the call
+under the figure and the cost line all come from the plan of the mode showing.
+Both modes reuse the same three tiles of `assets/scenes.webp`, which are the
+frames asked for, not the key frames that stand in for them. Change a number and the drawing and the text move together.
 
 The hero plays both timelines on one clock, so the loop that decodes inline is
 still running when the one built on iterframes has finished.
 
-Colours mean the same thing in every diagram: yellow is frames and data, cyan
-is the decoder thread, magenta is the GPU.
+## Look
+
+Warm paper, one heavy sans, and objects that sit on the page: cards carry a
+dashed inner edge, buttons press down when clicked, code sits in a recessed
+slab, and the frame strip in the random access demo has sprocket holes.
+
+Colours mean the same thing in every diagram: amber is frames and data, cyan
+is the decoder thread, magenta is the GPU. Each accent is declared once in
+`styles.css` as an `--x-rgb` triple dark enough to read as text on the paper;
+every wash in a diagram is that same triple with an alpha, so an accent is
+changed in one place. Two shadows do the depth: `--lift` for what sits on the
+page, `--well` for what is cut into it. Nothing else casts a shadow.
+
+Two typefaces, both self-hosted in `assets/fonts/` as latin-only woff2, under
+the SIL Open Font License: Plus Jakarta Sans sets the text and the headlines,
+JetBrains Mono the code, the numbers and the labels. No web font is fetched
+from anywhere, so the page still makes no third-party request. Replacing one
+means dropping in the woff2 and changing its `@font-face` and `--sans` or
+`--mono`.
+
+
 
 ## Regenerating the images
 
@@ -58,8 +86,21 @@ The sprite sheets are read with `background-position` in percentages, so the
 tiles must stay the same size and in the same order. A sheet of *n* tiles is
 addressed as `calc(var(--i) * 100% / (n - 1))`.
 
-`assets/og.png` is composed with `ffmpeg` too; the command is in the commit
-that added it.
+`assets/og.png` is the page's own hero, laid out in `og-card.html` against
+`styles.css`, so the card carries the same paper, type and accent as the site.
+Render it after changing either:
+
+```bash
+python3 -m http.server 8000 --directory . &
+chrome --headless=new --hide-scrollbars --window-size=1200,630 \
+  --screenshot=assets/og.png --virtual-time-budget=6000 \
+  http://localhost:8000/og-card.html
+```
+
+`chrome` is the Chrome binary; on macOS it is
+`/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`. Check the
+result at 1200x630 and that the text survives the crop social networks
+apply.
 
 ## Analytics
 
