@@ -54,6 +54,13 @@ as `iterframes.iterframes`, and `iterframes/__init__.py` wraps its
   frame, which decoding cannot return either, so frame numbers are those of
   a plain `read`. A stream that cannot seek, such as raw H.264, is opened
   again and read from the start (`Source::open`).
+- `approximate` goes with `frames` only, and carries a tolerance in frames
+  (`True` is `usize::MAX`), in `Selection::Frames`. `selected` then maps
+  each index through `Seeker::nearest_key`, which snaps it to the key frame
+  closest to it when that is within the tolerance, and leaves it alone
+  otherwise. Nothing else changes: the index pass still runs, and two
+  indices that snap to the same key frame decode it once each, so the caller
+  gets one frame per number asked for.
 - Errors travel through the channel and become Python exceptions in
   `impl From<Error> for PyErr`. A closed channel means the end of the video.
 - Dropping the reader closes the channel; the thread notices on its next
@@ -145,6 +152,20 @@ Three pages: `index.md` (overview), `reference.md` (API and errors),
 built module; check them instead of writing them from memory. Keep the
 text short, in American English, with no performance claims that have not
 been measured.
+
+The landing page in `web/` is part of the docs: whenever an argument, a
+default, or the behavior of a feature changes, update it in the same
+change as the code, and say so in the pull request. Its diagrams are
+drawn from the numbers declared in `web/main.js`, so change the number
+and let the drawing and the captions follow; never write a figure into
+the HTML that the script also computes. `web/README.md` lists those
+numbers and the files. Check the result in a browser before proposing the
+change: open `web/index.html`, or serve the directory with
+`python3 -m http.server --directory web`. The page has no build step and no
+third-party request: its two typefaces are self-hosted woff2 files in
+`web/assets/fonts/`, and everything else is plain HTML, CSS, and JavaScript.
+`web/README.md` describes the look and the colour rules; keep them rather
+than restyling one component on its own.
 
 ## Landing page
 

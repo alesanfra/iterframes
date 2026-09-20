@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#0f1820">
+<meta name="theme-color" content="#f8f2e6">
 <title>iterframes: video frames as NumPy arrays, decoded ahead of your loop</title>
 <meta name="description" content="iterframes decodes video on a Rust thread that never takes the GIL, and hands your Python loop frames as NumPy arrays with no copy. Random access by frame number, hardware decoding, FFmpeg in the wheel.">
 <link rel="canonical" href="https://alesanfra.github.io/iterframes/">
@@ -15,6 +15,8 @@
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="assets/frames.webp" as="image">
+<link rel="preload" href="assets/fonts/jetbrains-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/jakarta-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="styles.css">
 <!-- Analytics: none. To add a cookieless counter later, drop the snippet here.
      GoatCounter (hosted, free, no cookies, no consent banner):
@@ -44,6 +46,7 @@
 <main id="main">
 
 <section class="hero wrap">
+  <p class="badge">Rust decoder for Python &middot; v0.5.0</p>
   <h1>Your loop never waits<br>for the decoder.</h1>
   <p class="lede">
     Video frames reach your Python code as NumPy arrays, decoded by a Rust
@@ -59,6 +62,12 @@
     <a class="ghost" href="https://iterframes.readthedocs.io">Documentation</a>
     <a class="ghost" href="https://github.com/alesanfra/iterframes">Source</a>
   </div>
+
+  <dl class="stats">
+    <div class="stat"><dt><b>pip install</b></dt><dd><span>FFmpeg comes in the wheel</span></dd></div>
+    <div class="stat"><dt><b>CPython 3.11+</b></dt><dd><span>Linux, macOS, Windows</span></dd></div>
+    <div class="stat"><dt><b>No GIL</b></dt><dd><span>held by the decoder thread</span></dd></div>
+  </dl>
 
   <figure class="trace" id="trace">
     <div class="trace-head">
@@ -140,6 +149,16 @@
   </p>
 </section>
 
+<div class="ticker">
+  <div class="wrap ticker-in">
+    <span>NumPy arrays, no copy</span>
+    <span>batches in one block</span>
+    <span>random access by frame</span>
+    <span>NVDEC and VideoToolbox</span>
+    <span>FFmpeg in the wheel</span>
+  </div>
+</div>
+
 <section class="wrap band" id="loop">
   <h2>The loop you already write</h2>
   <p class="sub">
@@ -199,15 +218,21 @@
 </section>
 
 <section class="wrap band" id="seek">
-  <h2>Ask for frame 11,711 and pay for twelve frames</h2>
+  <h2>Read three frames, not fourteen thousand</h2>
   <p class="sub">
     Give <code>read</code> a list of frame numbers, or a <code>start</code>,
     <code>stop</code> and <code>step</code>, and iterframes reads only what it
     has to. Here is what it does with
-    <code>frames=[934,&nbsp;4522,&nbsp;11711]</code> on a ten minute video.
+    <code>frames=[934,&nbsp;4522,&nbsp;11711]</code> on a ten minute video,
+    exactly or approximately.
   </p>
 
   <figure class="seek" id="seekdemo">
+    <div class="modes" id="seek-modes" role="group" aria-label="How the frames are read">
+      <button class="mode on" type="button" id="mode-exact" aria-pressed="true">Exact</button>
+      <button class="mode" type="button" id="mode-approximate" aria-pressed="false">approximate=45</button>
+    </div>
+
     <div class="counters">
       <div class="counter">
         <span class="counter-value" id="count-requested">3</span>
@@ -241,6 +266,7 @@
         <span class="key key-kf">Key frame</span>
         <span class="key key-thrown">Decoded, then thrown away</span>
         <span class="key key-kept">Kept</span>
+        <span class="key key-asked" hidden id="key-asked">Asked for, never decoded</span>
       </div>
     </div>
 
@@ -257,11 +283,12 @@
       <li><span class="dot"></span><b>Hand over three frames.</b> 70 frames decoded, 14,246
         never read at all.</li>
     </ol>
+    <p class="seek-cost" id="seek-cost"></p>
 
     <div class="catch" id="catch"></div>
 
     <figcaption class="seek-foot">
-      <pre class="inline-code"><code>iterframes.<span class="f">read</span>(<span class="s">"bunny.mp4"</span>, frames=[<span class="n">934</span>, <span class="n">4522</span>, <span class="n">11711</span>])</code></pre>
+      <pre class="inline-code"><code id="seek-call">iterframes.<span class="f">read</span>(<span class="s">"bunny.mp4"</span>, frames=[<span class="n">934</span>, <span class="n">4522</span>, <span class="n">11711</span>])</code></pre>
       <button class="replay" type="button" id="seek-replay">Play again</button>
     </figcaption>
   </figure>
@@ -270,6 +297,13 @@
     Negative numbers count from the end, frame <code>n</code> is the one a plain
     <code>read</code> yields <code>n</code>th, and frames asked for in order cost
     no more than reading the video straight through.
+  </p>
+
+  <p class="note" id="approximate">
+    <code>approximate</code> is the switch above: each number is read as the key
+    frame nearest to it, as long as that key frame is within the frames given,
+    so nothing in between is decoded. A frame further away than that is still
+    read exactly, which keeps the error inside the number you chose.
   </p>
 </section>
 

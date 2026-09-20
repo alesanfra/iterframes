@@ -160,48 +160,140 @@
   var countSkipped = document.getElementById("count-skipped");
   var steps = document.querySelectorAll("#seek-steps li");
 
-  var shots = WANTED.map(function (frame, index) {
-    var key = Math.floor(frame / GOP) * GOP;
-    return {
-      index: index,
-      frame: frame,
-      key: key,
-      decoded: frame - key + 1,
-      from: key - PAD,
-      to: frame + PAD
-    };
-  });
+  // The tolerance of the approximate mode: a frame is read as the key frame
+  // nearest to it when that one is no further away than this, else exactly.
+  var APPROXIMATE = 45;
 
-  var decodedTotal = shots.reduce(function (sum, shot) { return sum + shot.decoded; }, 0);
+  // One entry per frame asked for, in each mode. `key` is where decoding
+  // starts, `decoded` how many frames it costs, and `kept` the frame handed
+  // over, which is the key frame itself when the number snapped to it.
+  function seekPlan(approximate) {
+    return WANTED.map(function (frame, index) {
+      var before = Math.floor(frame / GOP) * GOP;
+      var after = before + GOP;
+      var nearest = frame - before <= after - frame ? before : after;
+      var snapped = approximate && Math.abs(nearest - frame) <= APPROXIMATE;
+      var key = snapped ? nearest : before;
+      var kept = snapped ? nearest : frame;
+      return {
+        index: index,
+        frame: frame,
+        key: key,
+        kept: kept,
+        snapped: snapped,
+        moved: Math.abs(nearest - frame),
+        decoded: snapped ? 1 : frame - before + 1,
+        from: Math.min(key, frame) - PAD,
+        to: Math.max(key, frame) + PAD
+      };
+    });
+  }
 
+  var PLANS = { exact: seekPlan(false), approximate: seekPlan(true) };
+
+  function cost(shots) {
+    return shots.reduce(function (sum, shot) { return sum + shot.decoded; }, 0);
+  }
+
+  var modeButtons = {
+    exact: document.getElementById("mode-exact"),
+    approximate: document.getElementById("mode-approximate")
+  };
+  var askedKey = document.getElementById("key-asked");
+  var seekCall = document.getElementById("seek-call");
+  var seekCost = document.getElementById("seek-cost");
+
+  modeButtons.approximate.textContent = "approximate=" + APPROXIMATE;
+
+  var mode = "exact";
+  var shots = PLANS[mode];
+  var decodedTotal = cost(shots);
   var runEls = [], markEls = [], caughtEls = [];
 
-  shots.forEach(function (shot) {
-    var run = document.createElement("div");
-    run.className = "run";
-    run.style.setProperty("--x", shot.key / TOTAL_FRAMES);
-    run.style.setProperty("--w", shot.decoded / TOTAL_FRAMES);
-    runsHost.appendChild(run);
-    runEls.push(run);
+  function drawSeek() {
+    shots = PLANS[mode];
+    decodedTotal = cost(shots);
+    runsHost.textContent = "";
+    marksHost.textContent = "";
+    catchHost.textContent = "";
+    runEls = [];
+    markEls = [];
+    caughtEls = [];
 
-    var mark = document.createElement("div");
-    mark.className = "mark";
-    mark.style.setProperty("--x", shot.frame / TOTAL_FRAMES);
-    mark.dataset.label = "Frame " + number(shot.frame);
-    marksHost.appendChild(mark);
-    markEls.push(mark);
+    shots.forEach(function (shot) {
+      var run = document.createElement("div");
+      run.className = "run";
+      run.style.setProperty("--x", shot.key / TOTAL_FRAMES);
+      // A single decoded frame would be invisible on a bar this wide.
+      run.style.setProperty("--w", Math.max(shot.decoded, GOP / 3) / TOTAL_FRAMES);
+      runsHost.appendChild(run);
+      runEls.push(run);
 
-    var caught = document.createElement("figure");
-    caught.className = "caught";
-    caught.innerHTML = '<i style="--i:' + shot.index + '"></i><span>Frame ' +
-      number(shot.frame) + "<br>" + shot.decoded + " frames decoded from key frame " +
-      number(shot.key) + "</span>";
-    catchHost.appendChild(caught);
-    caughtEls.push(caught);
-  });
+      var mark = document.createElement("div");
+      mark.className = "mark";
+      mark.style.setProperty("--x", shot.frame / TOTAL_FRAMES);
+      mark.dataset.label = "Frame " + number(shot.frame);
+      marksHost.appendChild(mark);
+      markEls.push(mark);
 
-  steps[3].lastChild.textContent = " " + decodedTotal + " frames decoded, " +
-    number(TOTAL_FRAMES - decodedTotal) + " never read at all.";
+      var caught = document.createElement("figure");
+      caught.className = "caught";
+      caught.innerHTML = '<i style="--i:' + shot.index + '"></i><span>' +
+        (shot.snapped
+          ? "Key frame " + number(shot.key) + "<br>" + shot.moved +
+            " frames from the " + number(shot.frame) + " asked for"
+          : "Frame " + number(shot.frame) + "<br>" + shot.decoded +
+            " frames decoded from key frame " + number(shot.key)) +
+        "</span>";
+      catchHost.appendChild(caught);
+      caughtEls.push(caught);
+    });
+
+    askedKey.hidden = mode === "exact";
+    seekCall.innerHTML = 'iterframes.<span class="f">read</span>(' +
+      '<span class="s">"bunny.mp4"</span>, frames=[<span class="n">934</span>, ' +
+      '<span class="n">4522</span>, <span class="n">11711</span>]' +
+      (mode === "exact" ? "" : ', approximate=<span class="n">' + APPROXIMATE + "</span>") + ")";
+    seekCost.textContent = mode === "exact"
+      ? decodedTotal + " frames decoded for " + shots.length + " frames asked for."
+      : decodedTotal + " frames decoded instead of " + cost(PLANS.exact) +
+        ", each at most " + shots.reduce(function (most, shot) {
+          return Math.max(most, shot.moved);
+        }, 0) + " frames from the one asked for.";
+
+    stepsFor(mode).forEach(function (text, index) {
+      steps[index].innerHTML = '<span class="dot"></span><b>' + text[0] + "</b> " + text[1];
+    });
+  }
+
+  function stepsFor(mode) {
+    var indexed = ["Index the file once.", "Every packet is demuxed and none is " +
+      "decoded, which is enough to learn where each frame sits and which frames " +
+      "are key frames."];
+    var first = shots[0];
+    if (mode === "exact") {
+      return [
+        indexed,
+        ["Jump back to a key frame.", "Frame " + number(first.frame) + " cannot be " +
+          "decoded on its own, so the decoder seeks to frame " + number(first.key) +
+          ", the key frame in front of it."],
+        ["Decode forward and drop.", "The frames in between are decoded so the next " +
+          "one can be, then thrown away without ever being converted to RGB."],
+        ["Hand over " + shots.length + " frames.", decodedTotal + " frames decoded, " +
+          number(TOTAL_FRAMES - decodedTotal) + " never read at all."]
+      ];
+    }
+    return [
+      indexed,
+      ["Snap to the nearest key frame.", "Frame " + number(first.frame) + " is " +
+        first.moved + " frames from key frame " + number(first.key) + ", inside the " +
+        APPROXIMATE + " frames allowed, so that key frame stands in for it."],
+      ["Decode one frame.", "A key frame decodes on its own, so nothing in between " +
+        "is decoded and nothing is thrown away."],
+      ["Hand over " + shots.length + " frames.", decodedTotal + " frames decoded, " +
+        number(TOTAL_FRAMES - decodedTotal) + " never read at all."]
+    ];
+  }
 
   var seekTimers = [];
   var decoded = 0;
@@ -215,23 +307,26 @@
   function later(ms, fn) { seekTimers.push(setTimeout(fn, ms)); }
 
   function drawWindow(shot) {
-    // Draws the frames around one request, from a few before the key frame to
-    // a few past the one that was asked for.
+    // Draws the frames around one request, from a few before the first of the
+    // key frame and the frame asked for to a few past the last of the two.
     zoomCells.textContent = "";
     var cells = [];
     for (var frame = shot.from; frame <= shot.to; frame++) {
       var cell = document.createElement("div");
       cell.className = "zcell";
       if (frame === shot.key) cell.classList.add("kf");
+      if (shot.snapped && frame === shot.frame) cell.classList.add("asked");
       zoomCells.appendChild(cell);
       cells.push(cell);
     }
     var count = cells.length;
-    var keyAt = (PAD + 0.5) / count;
-    var frameAt = (PAD + shot.decoded - 0.5) / count;
-    zoomJump.style.left = (keyAt * 100) + "%";
-    zoomJump.style.width = ((frameAt - keyAt) * 100) + "%";
-    zoomJump.firstChild.textContent = "Seek back " + (shot.decoded - 1) + " frames";
+    var keyAt = (shot.key - shot.from + 0.5) / count;
+    var frameAt = (shot.frame - shot.from + 0.5) / count;
+    zoomJump.style.left = (Math.min(keyAt, frameAt) * 100) + "%";
+    zoomJump.style.width = (Math.abs(frameAt - keyAt) * 100) + "%";
+    zoomJump.firstChild.textContent = shot.snapped
+      ? "Read " + shot.moved + " frames earlier"
+      : "Seek back " + (shot.decoded - 1) + " frames";
     return cells;
   }
 
@@ -252,13 +347,17 @@
   function finishNow() {
     var last = shots[shots.length - 1];
     var cells = drawWindow(last);
+    var keyAt = last.key - last.from;
     cells.forEach(function (cell, i) {
-      if (i > PAD && i < PAD + last.decoded - 1) cell.classList.add("thrown");
-      if (i === PAD + last.decoded - 1) cell.classList.add("kept");
+      if (i > keyAt && i < keyAt + last.decoded - 1) cell.classList.add("thrown");
+      if (i === keyAt + last.decoded - 1) cell.classList.add("kept");
     });
     zoomJump.classList.add("on");
-    zoomTitle.innerHTML = "Frame <b>" + number(last.frame) +
-      "</b> decoded from key frame <b>" + number(last.key) + "</b>.";
+    zoomTitle.innerHTML = last.snapped
+      ? "Key frame <b>" + number(last.key) + "</b> read for frame <b>" +
+        number(last.frame) + "</b>."
+      : "Frame <b>" + number(last.frame) + "</b> decoded from key frame <b>" +
+        number(last.key) + "</b>.";
     film.classList.add("indexed");
     counts(decodedTotal);
     runEls.concat(markEls, caughtEls).forEach(function (el) { el.classList.add("on"); });
@@ -291,23 +390,29 @@
 
       later(base, function () {
         var cells = drawWindow(shot);
+        var keyAt = shot.key - shot.from;
         markEls[shot.index].classList.add("on", "active");
-        zoomTitle.innerHTML = "Frame <b>" + number(shot.frame) +
-          "</b> needs key frame <b>" + number(shot.key) + "</b> first.";
+        zoomTitle.innerHTML = shot.snapped
+          ? "Frame <b>" + number(shot.frame) + "</b> is " + shot.moved +
+            " frames from key frame <b>" + number(shot.key) + "</b>."
+          : "Frame <b>" + number(shot.frame) + "</b> needs key frame <b>" +
+            number(shot.key) + "</b> first.";
 
         later(350, function () { zoomJump.classList.add("on"); });
 
         later(1700, function () {
           steps[2].classList.add("on");
-          zoomTitle.innerHTML = "Decoding forward from <b>" + number(shot.key) +
-            "</b>, keeping only <b>" + number(shot.frame) + "</b>.";
+          zoomTitle.innerHTML = shot.snapped
+            ? "Decoding key frame <b>" + number(shot.key) + "</b> alone."
+            : "Decoding forward from <b>" + number(shot.key) +
+              "</b>, keeping only <b>" + number(shot.frame) + "</b>.";
           runEls[shot.index].classList.add("on");
 
           var perCell = 1900 / shot.decoded;
           for (var i = 0; i < shot.decoded; i++) {
             (function (i) {
               later(i * perCell, function () {
-                var cell = cells[PAD + i];
+                var cell = cells[keyAt + i];
                 cell.classList.add(i === shot.decoded - 1 ? "kept" : "thrown");
                 counts(decoded + 1);
               });
@@ -324,11 +429,25 @@
 
     later(INDEX_MS + 60 + shots.length * SLOT, function () {
       steps[3].classList.add("on");
-      zoomTitle.innerHTML = "Three frames out of " + number(TOTAL_FRAMES) +
+      zoomTitle.innerHTML = shots.length + " frames out of " + number(TOTAL_FRAMES) +
         ", for the cost of " + decodedTotal + ".";
     });
   }
 
+  Object.keys(modeButtons).forEach(function (name) {
+    modeButtons[name].addEventListener("click", function () {
+      if (mode === name) return;
+      mode = name;
+      Object.keys(modeButtons).forEach(function (other) {
+        modeButtons[other].classList.toggle("on", other === mode);
+        modeButtons[other].setAttribute("aria-pressed", other === mode ? "true" : "false");
+      });
+      drawSeek();
+      seekPlay();
+    });
+  });
+
+  drawSeek();
   once(document.getElementById("seekdemo"), seekPlay);
   document.getElementById("seek-replay").addEventListener("click", seekPlay);
 

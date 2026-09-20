@@ -332,7 +332,8 @@ impl Plane {
 /// `batch_size`, a `Batch` of that many frames (fewer in the last one,
 /// unless `drop_last`), whose `prefetch_frames` rounds up to whole batches.
 /// `frames`, or `start`, `stop`, and `step`, pick the frames to decode by
-/// number instead of reading the whole video. Use `iterframes.read` and
+/// number instead of reading the whole video, and `approximate` reads each
+/// of `frames` as the key frame nearest to it. Use `iterframes.read` and
 /// `iterframes.read_batches`, which wrap them in NumPy arrays.
 #[pyclass(module = "iterframes")]
 struct FrameReader {
@@ -344,7 +345,8 @@ impl FrameReader {
     #[new]
     #[pyo3(signature = (
         path, height=None, width=None, prefetch_frames=1, device="cpu", on_device=false,
-        batch_size=None, drop_last=false, frames=None, start=0, stop=None, step=1
+        batch_size=None, drop_last=false, frames=None, start=0, stop=None, step=1,
+        approximate=None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -360,8 +362,9 @@ impl FrameReader {
         start: isize,
         stop: Option<isize>,
         step: isize,
+        approximate: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
-        let selection = selection(frames, start, stop, step)?;
+        let selection = selection(frames, start, stop, step, approximate)?;
         let batching = match batch_size {
             None => None,
             Some(0) => return Err(PyValueError::new_err("batch_size must be at least 1")),
@@ -432,19 +435,28 @@ impl FrameReader {
 
 /// Which frames to decode, from the arguments Python passes: `frames`
 /// lists them, while `start`, `stop`, and `step` slice them as a list is
-/// sliced. The two ways cannot be mixed.
+/// sliced. The two ways cannot be mixed, and only `frames` can be
+/// approximate.
 fn selection(
     frames: Option<Vec<isize>>,
     start: isize,
     stop: Option<isize>,
     step: isize,
+    approximate: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<Selection> {
     let sliced = start != 0 || stop.is_some() || step != 1;
+    let approximate = tolerance(approximate)?;
     match frames {
         Some(_) if sliced => Err(PyValueError::new_err(
             "frames does not go with start, stop, or step",
         )),
-        Some(frames) => Ok(Selection::Frames(frames)),
+        Some(wanted) => Ok(Selection::Frames {
+            wanted,
+            approximate,
+        }),
+        None if approximate.is_some() => Err(PyValueError::new_err(
+            "approximate needs frames: a slice cannot be approximate",
+        )),
         None if step < 1 => Err(PyValueError::new_err("step must be at least 1")),
         // Frames counted from the first are read straight through, with
         // no index and no seeking.
@@ -459,6 +471,23 @@ fn selection(
         // Reading the whole video needs no index and no seeking.
         None => Ok(Selection::All),
     }
+}
+
+/// How far a frame may move to the nearest key frame, in frames, from
+/// what Python passes as `approximate`: `True` is any distance, a number
+/// is at most that many frames, and `False` or `None` is no move at all.
+fn tolerance(approximate: Option<&Bound<'_, PyAny>>) -> PyResult<Option<usize>> {
+    let Some(approximate) = approximate else {
+        return Ok(None);
+    };
+    // A bool is an int in Python, so it has to be read first.
+    if let Ok(any_distance) = approximate.extract::<bool>() {
+        return Ok(any_distance.then_some(usize::MAX));
+    }
+    let frames = approximate.extract::<usize>().map_err(|_| {
+        PyValueError::new_err("approximate must be True, False, or a number of frames")
+    })?;
+    Ok(Some(frames))
 }
 
 /// The hardware devices of this build, by the names PyTorch gives them,
