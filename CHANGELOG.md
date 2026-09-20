@@ -6,6 +6,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 From 0.4.0 on, [release-please](https://github.com/googleapis/release-please)
 writes each entry from the Conventional Commits since the previous release.
 
+## [0.5.0](https://github.com/alesanfra/iterframes/compare/v0.4.0...v0.5.0) (2026-09-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* `read_all` is removed; use `list(iterframes.read(...))`.
+
+### Features
+
+* build wheels for Windows ([#4](https://github.com/alesanfra/iterframes/issues/4)) ([39702a5](https://github.com/alesanfra/iterframes/commit/39702a5b55333824956827c5cf23b50cf150fb22))
+* read frames by number, in the style of decord ([#10](https://github.com/alesanfra/iterframes/issues/10)) ([6d0627e](https://github.com/alesanfra/iterframes/commit/6d0627e65d357667ba28f274c780c3a58da541cb))
+* read frames in batches with read_batches ([#6](https://github.com/alesanfra/iterframes/issues/6)) ([136ae14](https://github.com/alesanfra/iterframes/commit/136ae14ad6cccfa3459f69518a610dd94957d4c1))
+
 ## [0.4.0](https://github.com/alesanfra/iterframes/compare/v0.3.0...v0.4.0) (2026-09-19)
 
 The rewrite: static FFmpeg wheels, frames without copies, and hardware
