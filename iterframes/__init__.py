@@ -47,6 +47,7 @@ def read(
     start: int = 0,
     stop: Optional[int] = None,
     step: int = 1,
+    approximate: Union[bool, int, None] = None,
 ) -> Iterator[Union[np.ndarray, CudaFrame]]:
     """Yield the frames of the video at ``path``, in order.
 
@@ -81,6 +82,15 @@ def read(
     the file first, by reading its packets without decoding them, and then
     decodes each frame from the key frame before it, so frames asked for
     in order cost no more than reading the video straight through.
+
+    ``approximate`` trades accuracy for speed, and goes with ``frames``
+    only: each frame asked for is read as the key frame nearest to it, so
+    it costs one decoded frame instead of the frames from the key frame
+    on. ``approximate=n`` moves a frame by at most ``n`` frames and reads
+    the rest exactly, which bounds the error; ``approximate=True`` moves
+    it by any distance. The video still has to be indexed, so the packets
+    are read either way. Two frames near the same key frame are then the
+    same frame, and are decoded once each.
     """
     reader = FrameReader(
         path,
@@ -93,6 +103,7 @@ def read(
         start=start,
         stop=stop,
         step=step,
+        approximate=approximate,
     )
     if on_device:
         yield from reader
@@ -114,6 +125,7 @@ def read_batches(
     start: int = 0,
     stop: Optional[int] = None,
     step: int = 1,
+    approximate: Union[bool, int, None] = None,
 ) -> Iterator[np.ndarray]:
     """Yield the frames of the video at ``path`` in batches, in order.
 
@@ -125,7 +137,8 @@ def read_batches(
 
     Takes the same arguments as :func:`read`, except ``on_device``, so
     ``frames``, or ``start``, ``stop``, and ``step``, batch the frames
-    with those numbers instead of the whole video. The background thread
+    with those numbers instead of the whole video, and ``approximate``
+    batches the key frames nearest to ``frames``. The background thread
     decodes up to ``prefetch_frames`` frames ahead, rounded up to whole
     batches.
     """
@@ -143,6 +156,7 @@ def read_batches(
         start=start,
         stop=stop,
         step=step,
+        approximate=approximate,
     )
     # The arrays share memory with the batches, which they keep alive.
     for batch in reader:

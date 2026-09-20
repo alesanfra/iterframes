@@ -38,8 +38,13 @@ pub enum Selection {
     /// straight through as well, and stops early.
     First(usize),
     /// These frames, in this order; a negative number counts from the end
-    /// of the video.
-    Frames(Vec<isize>),
+    /// of the video. With `approximate`, each of them is read as the
+    /// nearest key frame within that many frames of it, which costs one
+    /// decoded frame instead of the ones from the key frame on.
+    Frames {
+        wanted: Vec<isize>,
+        approximate: Option<usize>,
+    },
     /// The frames from `start` to `stop`, every `step` of them, as a
     /// Python slice: negative bounds count from the end, and `stop` of
     /// `None` is the end of the video.
@@ -67,7 +72,7 @@ impl Selection {
         match self {
             Selection::All => Ok((0..frames).collect()),
             Selection::First(count) => Ok((0..frames.min(*count)).collect()),
-            Selection::Frames(wanted) => wanted.iter().copied().map(resolve).collect(),
+            Selection::Frames { wanted, .. } => wanted.iter().copied().map(resolve).collect(),
             // Out of range bounds clamp, as a slice of a list does.
             Selection::Range { start, stop, step } => {
                 let clamp = |index: isize| {
@@ -250,8 +255,18 @@ fn selected(
     tx: &Sender<Message>,
 ) -> Result<bool, Error> {
     let mut seeker = Seeker::new(source, input, decoder)?;
+    let mut indices = selection.indices(seeker.len())?;
+    if let Selection::Frames {
+        approximate: Some(tolerance),
+        ..
+    } = selection
+    {
+        for index in &mut indices {
+            *index = seeker.nearest_key(*index, tolerance);
+        }
+    }
     let mut frame = Frame::new();
-    for index in selection.indices(seeker.len())? {
+    for index in indices {
         seeker.frame(index, &mut frame)?;
         if !converter.send(&mut frame, tx)? {
             return Ok(false);
@@ -515,6 +530,25 @@ impl Seeker<'_> {
                     return Err(Error::Decode(ffmpeg::Error::INVALID_DATA));
                 }
             }
+        }
+    }
+
+    /// The key frame nearest to `index`, when no more than `tolerance`
+    /// frames away from it, else `index` itself. A tie goes to the key
+    /// frame before, which decoding is more likely to reach by going on.
+    fn nearest_key(&self, index: usize, tolerance: usize) -> usize {
+        let before = self.key_frame_before(index);
+        let nearest = match self
+            .keys
+            .get(self.keys.partition_point(|key| *key <= index))
+        {
+            Some(after) if after - index < index - before => *after,
+            _ => before,
+        };
+        if nearest.abs_diff(index) <= tolerance {
+            nearest
+        } else {
+            index
         }
     }
 

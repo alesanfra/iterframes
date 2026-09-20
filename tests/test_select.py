@@ -83,6 +83,107 @@ def test_frames_match_reading_in_order(video_path, frames_of_the_video):
         np.testing.assert_array_equal(frame, frames_of_the_video[index])
 
 
+def key_frames(path):
+    """The numbers of the key frames of a video, in order."""
+    with av.open(str(path)) as container:
+        return [
+            index
+            for index, frame in enumerate(container.decode(video=0))
+            if frame.key_frame
+        ]
+
+
+def test_approximate_frames_are_key_frames(video_path, frames_of_the_video):
+    wanted = [5, 100, 457, 900]
+    keys = key_frames(video_path)
+
+    frames = list(iterframes.read(video_path, frames=wanted, approximate=True))
+
+    assert len(frames) == len(wanted)
+    for frame, index in zip(frames, wanted):
+        nearest = min(keys, key=lambda key: (abs(key - index), key))
+        np.testing.assert_array_equal(frame, frames_of_the_video[nearest])
+
+
+def test_approximate_tolerance_keeps_far_frames_exact(
+    video_path, frames_of_the_video
+):
+    keys = key_frames(video_path)
+    # A frame in the middle of a group of pictures, with no key frame
+    # within two frames of it.
+    far = next(
+        index
+        for index in range(901)
+        if all(abs(key - index) > 2 for key in keys)
+    )
+
+    frames = list(
+        iterframes.read(video_path, frames=[far, keys[1] + 1], approximate=2)
+    )
+
+    np.testing.assert_array_equal(frames[0], frames_of_the_video[far])
+    np.testing.assert_array_equal(frames[1], frames_of_the_video[keys[1]])
+
+
+def test_approximate_key_frames_are_themselves(
+    video_path, frames_of_the_video
+):
+    keys = key_frames(video_path)[:3]
+
+    frames = list(iterframes.read(video_path, frames=keys, approximate=True))
+
+    for frame, index in zip(frames, keys):
+        np.testing.assert_array_equal(frame, frames_of_the_video[index])
+
+
+def test_approximate_repeats_the_same_key_frame(video_path):
+    keys = key_frames(video_path)
+    wanted = [keys[1] - 1, keys[1], keys[1] + 1]
+
+    frames = list(iterframes.read(video_path, frames=wanted, approximate=True))
+
+    assert len(frames) == 3
+    np.testing.assert_array_equal(frames[0], frames[1])
+    np.testing.assert_array_equal(frames[1], frames[2])
+
+
+def test_approximate_off_reads_exactly(video_path, frames_of_the_video):
+    wanted = [7, 123]
+
+    for approximate in [None, False, 0]:
+        frames = list(
+            iterframes.read(video_path, frames=wanted, approximate=approximate)
+        )
+
+        for frame, index in zip(frames, wanted):
+            np.testing.assert_array_equal(frame, frames_of_the_video[index])
+
+
+def test_approximate_batches(video_path, frames_of_the_video):
+    keys = key_frames(video_path)
+    wanted = [keys[1] + 1, keys[2] + 1, keys[3] + 1]
+
+    batches = list(
+        iterframes.read_batches(video_path, 2, frames=wanted, approximate=True)
+    )
+
+    stacked = np.concatenate(batches)
+    assert len(stacked) == 3
+    for frame, index in zip(stacked, keys[1:]):
+        np.testing.assert_array_equal(frame, frames_of_the_video[index])
+
+
+def test_approximate_needs_frames(video_path):
+    with pytest.raises(ValueError, match="approximate needs frames"):
+        list(iterframes.read(video_path, start=10, approximate=True))
+
+
+@pytest.mark.parametrize("approximate", [-1, "yes", 1.5])
+def test_approximate_must_be_a_bool_or_a_count(video_path, approximate):
+    with pytest.raises(ValueError, match="approximate must be"):
+        list(iterframes.read(video_path, frames=[1], approximate=approximate))
+
+
 def test_frames_match_pyav(video_path, decode_with_pyav, assert_close):
     expected = decode_with_pyav(video_path)
 

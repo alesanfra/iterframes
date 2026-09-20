@@ -64,6 +64,13 @@ clip = list(iterframes.read("video.mp4", frames=[0, 30, 60]))
 every_fifth = iterframes.read("video.mp4", start=100, stop=200, step=5)
 ```
 
+Or, when a frame nearby will do, read the nearest key frame to each of
+them and skip the decoding in between:
+
+```python
+clip = list(iterframes.read("video.mp4", frames=[0, 30, 60], approximate=5))
+```
+
 Stop whenever you like; the decoder stops with the loop:
 
 ```python

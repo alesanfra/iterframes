@@ -5,7 +5,7 @@ Everything lives in the top-level `iterframes` module.
 ## read
 
 ```python
-read(path, height=None, width=None, prefetch_frames=1, device="cpu", on_device=False, frames=None, start=0, stop=None, step=1) -> Iterator[numpy.ndarray]
+read(path, height=None, width=None, prefetch_frames=1, device="cpu", on_device=False, frames=None, start=0, stop=None, step=1, approximate=None) -> Iterator[numpy.ndarray]
 ```
 
 Yields the frames of the video at `path`, in order, or with `frames`, or
@@ -23,6 +23,7 @@ Each frame is a C-contiguous, writable `numpy.ndarray` of shape
 | `on_device` | With `device="cuda"`, yield `CudaFrame` objects left on the GPU instead of arrays. See [Frames on the GPU](#frames-on-the-gpu) |
 | `frames` | The numbers of the frames to read, in the order to read them. See [Reading frames by number](#reading-frames-by-number) |
 | `start`, `stop`, `step` | The frames to read, as a slice of the video |
+| `approximate` | With `frames`, read the key frame nearest to each of them instead, when it is within this many frames. `True` is any distance. See [Approximate frames](#approximate-frames) |
 
 Frames are resized with bilinear interpolation. When only one of `height`
 and `width` is given, the other keeps the size of the video, so the aspect
@@ -48,7 +49,7 @@ for frame in iterframes.read("video.mp4", height=270, width=480):
 ## read_batches
 
 ```python
-read_batches(path, batch_size, height=None, width=None, prefetch_frames=1, device="cpu", drop_last=False, frames=None, start=0, stop=None, step=1) -> Iterator[numpy.ndarray]
+read_batches(path, batch_size, height=None, width=None, prefetch_frames=1, device="cpu", drop_last=False, frames=None, start=0, stop=None, step=1, approximate=None) -> Iterator[numpy.ndarray]
 ```
 
 Yields the frames of the video in batches, in order, for models that take
@@ -108,6 +109,32 @@ Frame numbers are those of [`read`](#read): frame `n` is the one `read`
 yields `n`-th. A number the video does not have raises `IndexError`,
 while a slice past the end stops at the last frame, as a list does.
 
+## Approximate frames
+
+Decoding a frame in the middle of a group of pictures costs every frame
+from the key frame on. `approximate` spends one decoded frame instead, by
+reading the key frame nearest to each frame asked for. It goes with
+`frames` only; with `start`, `stop`, and `step` it raises `ValueError`.
+
+```python
+# The nearest key frame to each of these, however far away it is.
+frames = list(iterframes.read("video.mp4", frames=[100, 200, 300], approximate=True))
+
+# The nearest key frame within 5 frames, else the frame itself.
+frames = list(iterframes.read("video.mp4", frames=[100, 200, 300], approximate=5))
+```
+
+A number bounds the error: a frame moves by at most that many frames, and
+one with no key frame that close is decoded exactly. `True` accepts any
+distance, which in a video with a key frame every 10 seconds means a frame
+up to 5 seconds away from the one asked for. `False`, `0`, and `None`
+read every frame exactly.
+
+The video is still indexed, so its packets are read either way, and the
+saving is in decoding alone. Two frames near the same key frame become
+the same frame, which is decoded once for each of them: the iterator
+yields as many frames as `frames` asks for, in the same order.
+
 ## Errors
 
 Errors are raised by the first `next()` on the iterator, not by the call
@@ -147,7 +174,7 @@ FFmpeg also spreads the decoding of each video over several threads.
 ## FrameReader
 
 ```python
-FrameReader(path, height=None, width=None, prefetch_frames=1, device="cpu", on_device=False, batch_size=None, drop_last=False, frames=None, start=0, stop=None, step=1)
+FrameReader(path, height=None, width=None, prefetch_frames=1, device="cpu", on_device=False, batch_size=None, drop_last=False, frames=None, start=0, stop=None, step=1, approximate=None)
 ```
 
 The iterator behind `read` and `read_batches`. It yields `Frame` objects,

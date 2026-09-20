@@ -92,6 +92,17 @@ before it; frames asked for in order cost no more than reading the video
 straight through. See
 [Reading frames by number](https://iterframes.readthedocs.io/en/latest/reference/#reading-frames-by-number).
 
+When a frame nearby will do, `approximate` reads the key frame closest to
+each of `frames`, which costs one decoded frame instead of the frames from
+the key frame on:
+
+```python
+# The nearest key frame within 5 frames, else the frame itself.
+frames = list(iterframes.read("video.mp4", frames=[100, 200, 300], approximate=5))
+```
+
+See [Approximate frames](https://iterframes.readthedocs.io/en/latest/reference/#approximate-frames).
+
 ## Hardware decoding
 
 Pass `device` to decode on a GPU instead of the CPU, which then stays free

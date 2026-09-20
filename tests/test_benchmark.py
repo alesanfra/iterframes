@@ -108,3 +108,29 @@ def test_slice_from_the_middle_seeks_once(video_path):
     whole, second_half = read(), read(start=450)
     print(f"\nwhole {whole:.3f}s, start=450 {second_half:.3f}s")
     assert second_half < 0.75 * whole
+
+
+def test_approximate_frames_decode_less(video_path):
+    """Approximate frames must cost one decoded frame each.
+
+    Reading frames in the middle of their group of pictures decodes every
+    frame from the key frame on, while the nearest key frames decode one
+    frame each. Both pay for the pass that indexes the file.
+    """
+    with av.open(str(video_path)) as container:
+        frames = list(container.decode(video=0))
+        keys = [index for index, frame in enumerate(frames) if frame.key_frame]
+    # Frames far enough into their group of pictures to cost several
+    # decoded frames each, which approximate reading skips.
+    wanted = [key + 20 for key in keys if key + 20 < len(frames)][:20]
+
+    def read(**arguments):
+        def decode():
+            for _ in iterframes.read(video_path, frames=wanted, **arguments):
+                pass
+
+        return best_of(decode)
+
+    exact, approximate = read(), read(approximate=True)
+    print(f"\nexact {exact:.3f}s, approximate {approximate:.3f}s")
+    assert approximate < exact
