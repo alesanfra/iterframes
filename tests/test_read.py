@@ -2,7 +2,6 @@ import threading
 
 import numpy as np
 import pytest
-from conftest import DATA, assert_close, decode_with_pyav
 
 import iterframes
 
@@ -12,7 +11,7 @@ def test_version():
     assert iterframes.FFMPEG_VERSION
 
 
-def test_frames_match_pyav(video_path, pyav_frames):
+def test_frames_match_pyav(video_path, pyav_frames, assert_close):
     frames = list(iterframes.read(video_path))
 
     assert len(frames) == len(pyav_frames) == 901
@@ -34,10 +33,10 @@ def test_accepts_str_path(video_path):
 
 
 @pytest.mark.parametrize("height, width", [(540, 960), (135, 240)])
-def test_resize(video_path, height, width):
+def test_resize(video_path, height, width, decode_with_pyav, assert_close):
     expected = decode_with_pyav(video_path, height, width)
 
-    frames = iterframes.read_all(video_path, height=height, width=width)
+    frames = list(iterframes.read(video_path, height=height, width=width))
 
     assert len(frames) == len(expected)
     for frame, reference in zip(frames, expected):
@@ -57,8 +56,8 @@ def test_prefetch_frames(video_path, prefetch_frames):
     assert sum(1 for _ in frames) == 901
 
 
-def test_read_all(video_path, pyav_frames):
-    frames = iterframes.read_all(video_path)
+def test_last_frame(video_path, pyav_frames, assert_close):
+    frames = list(iterframes.read(video_path))
 
     assert len(frames) == len(pyav_frames)
     assert_close(frames[-1], pyav_frames[-1])
@@ -101,13 +100,12 @@ def test_not_a_video(tmp_path):
         next(iterframes.read(path))
 
 
-def test_av1():
+def test_av1(av1_video_path, decode_with_pyav, assert_close):
     # FFmpeg's native AV1 decoder only drives hardware decoders; the
     # software decoding comes from dav1d.
-    path = DATA / "video_av1_480x270.mp4"
-    expected = decode_with_pyav(path)
+    expected = decode_with_pyav(av1_video_path)
 
-    frames = iterframes.read_all(path)
+    frames = list(iterframes.read(av1_video_path))
 
     assert len(frames) == len(expected) == 30
     for frame, reference in zip(frames, expected):
@@ -236,9 +234,9 @@ def test_unknown_device(video_path):
         next(iterframes.read(video_path, device="nope"))
 
 
-def test_device_auto_falls_back(video_path, pyav_frames):
+def test_device_auto_falls_back(video_path, pyav_frames, assert_close):
     # Decodes on a device when there is one, on the CPU otherwise.
-    frames = iterframes.read_all(video_path, device="auto")
+    frames = list(iterframes.read(video_path, device="auto"))
 
     assert len(frames) == len(pyav_frames)
     for frame, expected in zip(frames, pyav_frames):
@@ -247,11 +245,15 @@ def test_device_auto_falls_back(video_path, pyav_frames):
 
 @pytest.mark.parametrize("device", iterframes.DEVICES[1:])
 @pytest.mark.parametrize("size", [None, (135, 240)])
-def test_hardware_device(video_path, device, size):
+def test_hardware_device(
+    video_path, device, size, decode_with_pyav, assert_close
+):
     height, width = size or (None, None)
     expected = decode_with_pyav(video_path, height, width)
     try:
-        frames = iterframes.read_all(video_path, height, width, device)
+        frames = list(
+            iterframes.read(video_path, height, width, device=device)
+        )
     except RuntimeError as error:
         pytest.skip(f"no {device} device: {error}")
 
@@ -292,7 +294,7 @@ def test_on_device(video_path, size):
 
 
 @pytest.mark.skipif("cuda" not in iterframes.DEVICES, reason="no NVDEC")
-def test_on_device_matches_cpu(video_path, pyav_frames):
+def test_on_device_matches_cpu(video_path, pyav_frames, assert_close):
     torch = pytest.importorskip("torch")
     try:
         frames = list(

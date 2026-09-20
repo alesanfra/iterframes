@@ -59,3 +59,52 @@ def test_decoding_overlaps_with_work(video_path):
     total, _ = decode(work=decoding / count)
     print(f"\ndecoding {decoding:.3f}s, decoding and work {total:.3f}s")
     assert total < 1.5 * decoding
+
+
+def test_slice_from_the_first_frame_costs_no_more(video_path):
+    """Frames counted from the first must not pay for the index.
+
+    ``start=0`` with ``step=1`` reads the video straight through, so
+    stopping at the last frame costs what reading it all costs, and
+    stopping early costs a fraction of it.
+    """
+
+    def read(**arguments):
+        def decode():
+            for _ in iterframes.read(video_path, **arguments):
+                pass
+
+        return best_of(decode)
+
+    whole, to_the_end, first_ten = (
+        read(),
+        read(stop=901),
+        read(stop=10),
+    )
+    print(
+        f"\nwhole {whole:.3f}s, stop=901 {to_the_end:.3f}s, "
+        f"stop=10 {first_ten:.3f}s"
+    )
+    assert to_the_end < 1.25 * whole
+    assert first_ten < 0.5 * whole
+
+
+def test_slice_from_the_middle_seeks_once(video_path):
+    """A slice with ``step=1`` must seek once, then decode in order.
+
+    Decoding the second half after one seek takes about half of what the
+    whole video takes, plus the pass that indexes the file. Seeking again
+    for every frame, or decoding from the first frame, would cost more
+    than reading it all.
+    """
+
+    def read(**arguments):
+        def decode():
+            for _ in iterframes.read(video_path, **arguments):
+                pass
+
+        return best_of(decode)
+
+    whole, second_half = read(), read(start=450)
+    print(f"\nwhole {whole:.3f}s, start=450 {second_half:.3f}s")
+    assert second_half < 0.75 * whole

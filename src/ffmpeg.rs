@@ -34,6 +34,10 @@ mod sys {
         -(u32::from_le_bytes(*code) as c_int)
     }
 
+    /// `AV_NOPTS_VALUE`: no timestamp, which bindgen leaves behind with
+    /// the other macros that cast.
+    pub const AV_NOPTS_VALUE: i64 = i64::MIN;
+
     pub const AVERROR_EOF: c_int = tag(b"EOF ");
     pub const AVERROR_INVALIDDATA: c_int = tag(b"INDA");
     pub const AVERROR_EXTERNAL: c_int = tag(b"EXT ");
@@ -48,8 +52,9 @@ pub struct Error(c_int);
 impl Error {
     pub const OUT_OF_MEMORY: Self = Self(sys::AVERROR(libc::ENOMEM));
 
+    pub const INVALID_DATA: Self = Self(sys::AVERROR_INVALIDDATA);
+
     const EOF: Error = Error(sys::AVERROR_EOF);
-    const INVALID_DATA: Error = Error(sys::AVERROR_INVALIDDATA);
 
     /// The POSIX error number, when the error comes from the system rather
     /// than from FFmpeg itself.
@@ -211,6 +216,25 @@ impl Input {
             }
         }
     }
+
+    /// Move the demuxer to the last key frame of `stream` at or before
+    /// `timestamp`, in the time base of that stream. The decoder must be
+    /// flushed afterwards, since its buffered frames come from elsewhere
+    /// in the file.
+    pub fn seek(&mut self, stream: usize, timestamp: i64) -> Result<(), Error> {
+        // SAFETY: the context is open and `stream` is one of its streams.
+        check(unsafe {
+            sys::avformat_seek_file(
+                self.0.as_ptr(),
+                stream as c_int,
+                i64::MIN,
+                timestamp,
+                timestamp,
+                0,
+            )
+        })
+        .map(drop)
+    }
 }
 
 impl Drop for Input {
@@ -233,6 +257,28 @@ impl Packet {
     pub fn stream(&self) -> usize {
         // SAFETY: the packet is allocated.
         unsafe { (*self.0.as_ptr()).stream_index as usize }
+    }
+
+    /// When the frame in the packet is shown, or `None` when the container
+    /// does not say.
+    pub fn pts(&self) -> Option<i64> {
+        // SAFETY: the packet is allocated.
+        let pts = unsafe { (*self.0.as_ptr()).pts };
+        (pts != sys::AV_NOPTS_VALUE).then_some(pts)
+    }
+
+    /// When the frame in the packet is decoded, which containers that have
+    /// no `pts` still give.
+    pub fn dts(&self) -> Option<i64> {
+        // SAFETY: the packet is allocated.
+        let dts = unsafe { (*self.0.as_ptr()).dts };
+        (dts != sys::AV_NOPTS_VALUE).then_some(dts)
+    }
+
+    /// Whether the packet holds a key frame, which decoding can start from.
+    pub fn is_key(&self) -> bool {
+        // SAFETY: the packet is allocated.
+        unsafe { (*self.0.as_ptr()).flags & sys::AV_PKT_FLAG_KEY as c_int != 0 }
     }
 }
 
@@ -266,6 +312,13 @@ impl Decoder {
     pub fn send_eof(&mut self) -> Result<(), Error> {
         // SAFETY: a null packet is how libavcodec is told to drain.
         check(unsafe { sys::avcodec_send_packet(self.context.as_ptr(), ptr::null()) }).map(drop)
+    }
+
+    /// Throw away the buffered frames, after seeking elsewhere in the
+    /// file.
+    pub fn flush(&mut self) {
+        // SAFETY: the decoder is open.
+        unsafe { sys::avcodec_flush_buffers(self.context.as_ptr()) };
     }
 
     /// Move the next decoded frame into `frame`. Return `false` when the
@@ -310,6 +363,13 @@ impl Frame {
 
     pub fn height(&self) -> u32 {
         self.get().height as u32
+    }
+
+    /// When the frame is shown, in the time base of its stream, or `None`
+    /// when the file does not say.
+    pub fn pts(&self) -> Option<i64> {
+        let pts = self.get().best_effort_timestamp;
+        (pts != sys::AV_NOPTS_VALUE).then_some(pts)
     }
 
     fn format(&self) -> c_int {
