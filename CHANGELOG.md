@@ -6,6 +6,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 From 0.4.0 on, [release-please](https://github.com/googleapis/release-please)
 writes each entry from the Conventional Commits since the previous release.
 
+## [0.6.0](https://github.com/alesanfra/iterframes/compare/v0.5.0...v0.6.0) (2026-09-20)
+
+
+### Features
+
+* read approximate frames ([#11](https://github.com/alesanfra/iterframes/issues/11)) ([2158899](https://github.com/alesanfra/iterframes/commit/2158899f72f73d69c0020236181e340bb8648fc1))
+
 ## [0.5.0](https://github.com/alesanfra/iterframes/compare/v0.4.0...v0.5.0) (2026-09-20)
 
 
