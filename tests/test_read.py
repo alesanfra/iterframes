@@ -310,7 +310,7 @@ def test_on_device_matches_cpu(video_path, pyav_frames, assert_close):
 
 
 def nv12_to_rgb(torch, frame):
-    """The conversion shown in docs/reference.md."""
+    """The conversion shown in docs/guides.md."""
     y = torch.from_dlpack(frame.y).float()
     uv = torch.from_dlpack(frame.uv).float()
     uv = uv.repeat_interleave(2, 0).repeat_interleave(2, 1)
