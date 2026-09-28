@@ -2,6 +2,34 @@
 
 What the arguments of [`read`](api.md#read) are for, and what they cost.
 
+## Frames without a copy
+
+Each frame is decoded into memory that iterframes allocates, and
+swscale writes its RGB pixels there. `read` does not copy them into a new
+NumPy array. The `Frame` that owns the memory implements Python's
+[buffer protocol](https://docs.python.org/3/c-api/buffer.html): it tells
+any library that asks where the pixels are, their shape
+`(height, width, 3)`, their strides, and their type, `uint8`.
+`numpy.asarray` builds the array on those same bytes.
+
+What this changes for your code:
+
+- **No copy per frame.** A copy would read and write every pixel once
+  more, about 6 MB for a 1080p frame. Wrapping costs the same at any
+  size.
+- **Contiguous arrays.** The rows have no padding, so the array is
+  C-contiguous. Libraries that need contiguous memory take it as it is:
+  `torch.from_numpy(frame)` shares the memory too.
+- **Batches in one block.** With `read_batches`, swscale writes each
+  frame into its slice of one allocation. The batch arrives as one
+  `(batch, height, width, 3)` array, with no `numpy.stack`.
+- **Memory you own.** The decoder never writes to a frame again once it
+  hands it over, so the array is writable and you can change it in place.
+  The memory is freed when the last array or view on it goes away.
+
+Other libraries can read a `Frame` without NumPy; see
+[`Frame`](api.md#frame).
+
 ## Reading frames by number
 
 `frames` reads the frames with those numbers, in the order given, instead

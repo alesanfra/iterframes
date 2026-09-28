@@ -14,7 +14,8 @@ While `model` runs on one frame, FFmpeg decodes the next ones on a
 background thread, written in Rust with [PyO3](https://pyo3.rs/). The
 thread never takes the GIL, so it keeps decoding even while your code
 holds it, and decoding overlaps with your work instead of adding to it.
-The frames reach NumPy without a copy.
+The frames reach NumPy without a copy, through the
+[buffer protocol](guides.md#frames-without-a-copy).
 
 ## Installation
 

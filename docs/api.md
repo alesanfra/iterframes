@@ -118,6 +118,7 @@ for frame in FrameReader("video.mp4"):
 ```
 
 The pixels stay alive as long as the frame or any array or view on it.
+See [Frames without a copy](guides.md#frames-without-a-copy).
 
 ## Batch
 
