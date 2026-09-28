@@ -3,7 +3,9 @@ use std::thread;
 
 use crossbeam_channel::{Receiver, Sender, bounded};
 
-use crate::ffmpeg::{self, Buffer, Decoder, DeviceType, Frame, HwDevice, Input, Packet, Scaler};
+use crate::ffmpeg::{
+    self, Buffer, Decoder, DeviceType, Frame, HwDevice, Input, Interpolation, Packet, Scaler,
+};
 
 pub enum Error {
     /// The file could not be opened or has no video stream.
@@ -153,7 +155,9 @@ pub type Message = Result<Decoded, Error>;
 /// Decode `path` on a background thread and return the channel that
 /// receives its frames: RGB24 in memory, grouped in batches with
 /// `batching`, or with `on_device`, left on the CUDA GPU that decoded them.
-/// `selection` is which frames to decode, in which order. The channel
+/// `selection` is which frames to decode, in which order. `interpolation`
+/// is how frames are resized; without one, the CPU resizes them bilinearly
+/// and NVIDIA decoders resize them on the GPU. The channel
 /// holds at most `prefetch` frames, rounded up to whole batches; it is
 /// closed after the last frame or right after an error.
 #[allow(clippy::too_many_arguments)]
@@ -161,6 +165,7 @@ pub fn start(
     path: String,
     height: Option<u32>,
     width: Option<u32>,
+    interpolation: Option<Interpolation>,
     device: Device,
     on_device: bool,
     batching: Option<Batching>,
@@ -171,7 +176,15 @@ pub fn start(
     let (tx, rx) = bounded(capacity);
     thread::spawn(move || {
         let result = decode(
-            &path, height, width, device, on_device, batching, selection, &tx,
+            &path,
+            height,
+            width,
+            interpolation,
+            device,
+            on_device,
+            batching,
+            selection,
+            &tx,
         );
         if let Err(err) = result {
             // Nobody is listening once the reader has been dropped.
@@ -186,17 +199,27 @@ fn decode(
     path: &str,
     height: Option<u32>,
     width: Option<u32>,
+    interpolation: Option<Interpolation>,
     device: Device,
     on_device: bool,
     batching: Option<Batching>,
     selection: Selection,
     tx: &Sender<Message>,
 ) -> Result<(), Error> {
-    let source = Source::new(path.to_owned(), height, width, device)?;
+    // NVIDIA's resizing method cannot be chosen, so an interpolation asked
+    // for by name leaves the resizing to swscale.
+    let source = Source::new(
+        path.to_owned(),
+        height,
+        width,
+        interpolation.is_none(),
+        device,
+    )?;
     let (input, decoder) = source.open()?;
     let mut converter = Converter {
         height,
         width,
+        interpolation: interpolation.unwrap_or(Interpolation::Bilinear),
         on_device,
         batching,
         batch: None,
@@ -278,6 +301,7 @@ fn selected(
 struct Converter {
     height: Option<u32>,
     width: Option<u32>,
+    interpolation: Interpolation,
     on_device: bool,
     batching: Option<Batching>,
     /// The batch being filled.
@@ -377,6 +401,7 @@ impl Converter {
                 frame,
                 self.width.unwrap_or(frame.width()),
                 self.height.unwrap_or(frame.height()),
+                self.interpolation,
             )
             .map_err(Error::Decode)?;
             self.scaler = Some(scaler);
@@ -392,6 +417,8 @@ struct Source {
     path: String,
     height: Option<u32>,
     width: Option<u32>,
+    /// Whether NVIDIA decoders resize the frames on the GPU.
+    resize_on_device: bool,
     device: Option<HwDevice>,
 }
 
@@ -400,6 +427,7 @@ impl Source {
         path: String,
         height: Option<u32>,
         width: Option<u32>,
+        resize_on_device: bool,
         device: Device,
     ) -> Result<Self, Error> {
         let device = match device {
@@ -415,6 +443,7 @@ impl Source {
             path,
             height,
             width,
+            resize_on_device,
             device,
         })
     }
@@ -424,7 +453,12 @@ impl Source {
         let open = |err| Error::Open(self.path.clone(), err);
         let input = Input::open(&self.path).map_err(open)?;
         let decoder = input
-            .video_decoder(self.device.as_ref(), self.width, self.height)
+            .video_decoder(
+                self.device.as_ref(),
+                self.width,
+                self.height,
+                self.resize_on_device,
+            )
             .map_err(open)?;
         Ok((input, decoder))
     }

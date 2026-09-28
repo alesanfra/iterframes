@@ -61,6 +61,11 @@ as `iterframes.iterframes`, and `iterframes/__init__.py` wraps its
   otherwise. Nothing else changes: the index pass still runs, and two
   indices that snap to the same key frame decode it once each, so the caller
   gets one frame per number asked for.
+- `interpolation` picks the `SWS_*` flag of the `Scaler`
+  (`ffmpeg::Interpolation`); `None` is `SWS_BILINEAR`. A named one also
+  turns off the `resize` option of the `*_cuvid` decoders
+  (`resize_on_device` in `Source`), so the CPU resizes what the GPU
+  decoded, since NVIDIA's method cannot be chosen.
 - Errors travel through the channel and become Python exceptions in
   `impl From<Error> for PyErr`. A closed channel means the end of the video.
 - Dropping the reader closes the channel; the thread notices on its next

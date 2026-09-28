@@ -127,13 +127,14 @@ impl Input {
     /// Open a decoder for the best video stream of the file. With a
     /// `device`, libavcodec decodes on it whenever it supports the codec,
     /// and on the CPU otherwise. `width` and `height` are the size the
-    /// caller wants: NVIDIA decoders resize to it while decoding, the
-    /// others leave it to the `Scaler`.
+    /// caller wants: NVIDIA decoders resize to it while decoding when
+    /// `resize_on_device`, and the `Scaler` does otherwise.
     pub fn video_decoder(
         &self,
         device: Option<&HwDevice>,
         width: Option<u32>,
         height: Option<u32>,
+        resize_on_device: bool,
     ) -> Result<Decoder, Error> {
         let mut codec = ptr::null();
         // SAFETY: the context is open; the stream index returned is valid
@@ -169,7 +170,7 @@ impl Input {
                 context.as_ptr(),
                 parameters,
             ))?;
-            if cuvid.is_some() && (width.is_some() || height.is_some()) {
+            if cuvid.is_some() && resize_on_device && (width.is_some() || height.is_some()) {
                 let size = format!(
                     "{}x{}",
                     width.unwrap_or((*parameters).width as u32),
@@ -646,7 +647,12 @@ pub struct Scaler {
 
 impl Scaler {
     /// A scaler from frames like `frame` to RGB24 frames of the given size.
-    pub fn new(frame: &Frame, width: u32, height: u32) -> Result<Self, Error> {
+    pub fn new(
+        frame: &Frame,
+        width: u32,
+        height: u32,
+        interpolation: Interpolation,
+    ) -> Result<Self, Error> {
         let context =
             NonNull::new(unsafe { sys::sws_alloc_context() }).ok_or(Error::OUT_OF_MEMORY)?;
         let scaler = Self {
@@ -661,7 +667,7 @@ impl Scaler {
             (c"dstw", width.into()),
             (c"dsth", height.into()),
             (c"dst_format", sys::AVPixelFormat::AV_PIX_FMT_RGB24.0.into()),
-            (c"sws_flags", SWS_BILINEAR.into()),
+            (c"sws_flags", interpolation as i64),
             // Converting to RGB takes longer than decoding, which already
             // runs on several threads; 0 is one slice thread per core.
             (c"threads", 0),
@@ -803,6 +809,26 @@ impl Drop for Buffer {
     }
 }
 
-/// `SWS_BILINEAR`, a macro before FFmpeg 8 and an enum from then on; the
-/// value is the same in every version.
-const SWS_BILINEAR: c_int = 2;
+/// How swscale resamples when it resizes, from its `SWS_*` flags: macros
+/// before FFmpeg 8 and an enum from then on, with the same values in every
+/// version. `SWS_FAST_BILINEAR` is left out: it aliases heavily when it
+/// shrinks, and on Apple silicon it is no faster than `SWS_BILINEAR`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Interpolation {
+    Nearest = 0x10,
+    Bilinear = 0x2,
+    Bicubic = 0x4,
+    Area = 0x20,
+    Lanczos = 0x200,
+}
+
+impl Interpolation {
+    /// Every method, by the name Python passes.
+    pub const ALL: [(&'static str, Interpolation); 5] = [
+        ("nearest", Interpolation::Nearest),
+        ("bilinear", Interpolation::Bilinear),
+        ("bicubic", Interpolation::Bicubic),
+        ("area", Interpolation::Area),
+        ("lanczos", Interpolation::Lanczos),
+    ];
+}

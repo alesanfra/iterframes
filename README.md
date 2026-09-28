@@ -55,7 +55,8 @@ twice as long: the decoding had already happened.
   `(height, width, 3)`, straight out of FFmpeg's buffers.
 - **Batches as one array.** `read_batches` decodes into a single
   `(batch, height, width, 3)` block, ready for a model.
-- **Resizing while decoding**, not a `cv2.resize` afterwards.
+- **Resizing while decoding**, not a `cv2.resize` afterwards, from
+  nearest to Lanczos.
 - **Random access.** Read frames by number, without decoding the rest.
 - **Hardware decoding** on NVIDIA GPUs (NVDEC) and Apple silicon
   (VideoToolbox), in the wheels. On NVIDIA the frames can stay on the GPU
