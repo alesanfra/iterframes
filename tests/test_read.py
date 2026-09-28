@@ -327,6 +327,8 @@ def test_device_literal(video_path, device):
     # Every name in the type hint is known, though not every platform has it.
     try:
         next(iterframes.read(video_path, device=device))
+    except RuntimeError:
+        pass  # Built in, but this machine has no such device.
     except ValueError as error:
         assert "is not available" in str(error)
 
