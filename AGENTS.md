@@ -85,6 +85,10 @@ as `iterframes.iterframes`, and `iterframes/__init__.py` wraps its
   linker. `build.rs` finds `bash.exe` on `PATH` itself, since Rust would
   otherwise pick WSL's from the system directory.
 - Keep the build LGPL: never pass `--enable-gpl` or `--enable-nonfree`.
+- iterframes itself is Apache-2.0. The wheels carry the licenses of what
+  they bundle, listed in `NOTICE` with their texts in `licenses/`: when a
+  version in `scripts/build-ffmpeg.sh` changes, or a library is added,
+  update both.
 - Hardware decoding (`device="mps"` / `"cuda"`, PyTorch's names, mapped
   to FFmpeg's in `hardware_devices` in `src/lib.rs`): VideoToolbox on
   macOS; on Linux and Windows
