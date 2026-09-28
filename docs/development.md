@@ -10,21 +10,39 @@ sudo apt install build-essential curl python3-venv \
     pkg-config libclang-dev nasm                          # Debian, Ubuntu
 ```
 
-On Windows, FFmpeg is built with MSVC from an
-[MSYS2](https://www.msys2.org/) shell, as CI does in
-`.github/workflows/ci.yaml`. Install Visual Studio's C++ build tools and
-LLVM (for libclang), then, in MSYS2:
+macOS and Linux need nothing else: the build fetches nasm, meson, and
+ninja when they are missing.
 
-```console
-pacman -S make diffutils curl tar xz \
-    mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-nasm
-rm /usr/bin/link.exe      # it shadows MSVC's link.exe
-uv tool install meson && uv tool install ninja
-```
+### Windows
 
-Start the MSYS2 UCRT64 shell from a Visual Studio developer prompt with
-`msys2_shell.cmd -ucrt64 -use-full-path`, so that `cl`, `cargo`, and `uv`
-stay on `PATH`, and run every command below from it.
+The wheels target MSVC, so FFmpeg is compiled with MSVC too. Its build
+script is a shell script, so it runs in an [MSYS2](https://www.msys2.org/)
+shell, as in the `windows` job of `.github/workflows/ci.yaml`.
+
+1. Install Visual Studio's C++ build tools, [LLVM](https://llvm.org/)
+   (for libclang), MSYS2, rustup, and uv.
+2. Open the *x64 Native Tools Command Prompt* and start MSYS2's UCRT64
+   shell from it, keeping its `PATH` so that `cl`, `cargo`, and `uv` stay
+   on it:
+
+    ```console
+    C:\msys64\msys2_shell.cmd -ucrt64 -use-full-path
+    ```
+
+3. In that shell, install the build tools. `pacman` is MSYS2's package
+   manager; meson and ninja come from uv instead, because they must be
+   Windows programs to drive MSVC:
+
+    ```console
+    pacman -S make diffutils curl tar xz \
+        mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-nasm
+    mv /usr/bin/link.exe /usr/bin/link-msys2.exe   # hides MSVC's link.exe
+    uv tool install meson
+    uv tool install ninja
+    export PATH="$PATH:$(cygpath -u "$(uv tool dir --bin)")"
+    ```
+
+Run every command below from that shell.
 
 ## FFmpeg
 
@@ -63,10 +81,13 @@ environment. Run it again after every change to a `.rs` file.
 | `src/lib.rs` | Python module: `Frame`, `Batch`, `FrameReader`, and the error mapping |
 | `src/decoder.rs` | Decoding thread: demux, decode, convert to RGB |
 | `src/ffmpeg.rs` | Safe wrappers over the FFmpeg calls the crate needs |
+| `src/dlpack.rs` | DLPack capsules for the planes of `CudaFrame` |
 | `iterframes/__init__.py` | `read` and `read_batches`, which wrap `FrameReader` |
-| `scripts/build-ffmpeg.sh` | Static FFmpeg build for the wheels |
+| `build.rs` | Builds and links FFmpeg, generates its bindings |
+| `scripts/build-ffmpeg.sh` | Static FFmpeg build, run by `build.rs` |
 | `tests/` | pytest suite, which checks the frames against PyAV |
 | `docs/` | This site |
+| `web/` | Landing page, published on GitHub Pages |
 
 ## Tests
 
@@ -105,6 +126,9 @@ uv run --no-sync mkdocs serve
 
 Read the Docs builds the site with `uv sync` from `uv.lock`, without
 compiling the extension.
+
+The landing page in `web/` has no build step: open `web/index.html`, or
+run `python3 -m http.server --directory web`.
 
 ## Wheels
 

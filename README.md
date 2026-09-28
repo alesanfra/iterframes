@@ -24,8 +24,8 @@ The landing page at
 [alesanfra.github.io/iterframes](https://alesanfra.github.io/iterframes/)
 shows what the decoder does while your loop runs. The documentation is at
 [iterframes.readthedocs.io](https://iterframes.readthedocs.io): the
-[reference](https://iterframes.readthedocs.io/en/latest/reference/)
-documents every argument and error, and the
+[guides](https://iterframes.readthedocs.io/en/latest/guides/) explain the features, the
+[API](https://iterframes.readthedocs.io/en/latest/api/) documents every argument and error, and the
 [development guide](https://iterframes.readthedocs.io/en/latest/development/)
 covers building from source.
 
@@ -90,7 +90,7 @@ frame `n` is the one `read` yields `n`-th. iterframes indexes the file
 once, without decoding it, then decodes each frame from the key frame
 before it; frames asked for in order cost no more than reading the video
 straight through. See
-[Reading frames by number](https://iterframes.readthedocs.io/en/latest/reference/#reading-frames-by-number).
+[Reading frames by number](https://iterframes.readthedocs.io/en/latest/guides/#reading-frames-by-number).
 
 When a frame nearby will do, `approximate` reads the key frame closest to
 each of `frames`, which costs one decoded frame instead of the frames from
@@ -101,7 +101,7 @@ the key frame on:
 frames = list(iterframes.read("video.mp4", frames=[100, 200, 300], approximate=5))
 ```
 
-See [Approximate frames](https://iterframes.readthedocs.io/en/latest/reference/#approximate-frames).
+See [Approximate frames](https://iterframes.readthedocs.io/en/latest/guides/#approximate-frames).
 
 ## Hardware decoding
 
@@ -126,7 +126,7 @@ print(iterframes.DEVICES)  # ('cpu', 'mps') on a Mac
 
 The frames still arrive as NumPy arrays in memory. A GPU saves CPU time
 but is not always faster than the CPU decoder, so measure both; see
-[Hardware decoding](https://iterframes.readthedocs.io/en/latest/reference/#hardware-decoding).
+[Hardware decoding](https://iterframes.readthedocs.io/en/latest/guides/#hardware-decoding).
 
 With an NVIDIA GPU, `on_device=True` keeps the frames on it, in NV12, for
 PyTorch and other libraries to take without a copy:
@@ -139,7 +139,7 @@ for frame in iterframes.read("video.mp4", device="cuda", on_device=True):
     uv = torch.from_dlpack(frame.uv)  # (height / 2, width / 2, 2)
 ```
 
-[Frames on the GPU](https://iterframes.readthedocs.io/en/latest/reference/#frames-on-the-gpu) shows how to
+[Frames on the GPU](https://iterframes.readthedocs.io/en/latest/guides/#frames-on-the-gpu) shows how to
 convert them to RGB there.
 
 ## Compared with OpenCV, decord, and PyAV

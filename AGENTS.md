@@ -147,8 +147,11 @@ locally.
 
 ## Docs
 
-Three pages: `index.md` (overview), `reference.md` (API and errors),
-`development.md`. Every example must match the behavior of a freshly
+Four pages: `index.md` (overview and quick start), `guides.md` (what the
+arguments are for, and what they cost), `api.md` (signatures, arguments,
+and errors), `development.md`. `scripts/docs_redirects.py` sends links to
+the old `reference/` page, anchors included, to the page that now holds
+each section; add to it when a section moves. Every example must match the behavior of a freshly
 built module; check them instead of writing them from memory. Keep the
 text short, in American English, with no performance claims that have not
 been measured.
