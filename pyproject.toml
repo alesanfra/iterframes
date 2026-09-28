@@ -9,8 +9,8 @@ authors = [
 ]
 description = "Iterate over the frames of a video as NumPy arrays, decoded on a background thread while you process them"
 readme = "README.md"
-license = "LGPL-3.0-only"
-license-files = ["LICENSE"]
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE", "licenses/*"]
 keywords = [
     "video", "decoder", "ffmpeg", "frames", "numpy", "video-reader",
     "pytorch", "deep-learning", "computer-vision", "nvdec", "videotoolbox",

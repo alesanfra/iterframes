@@ -6,7 +6,7 @@ rust-version = "1.89"
 description = "Iterate over the frames of a video as NumPy arrays, decoded on a background thread while you process them"
 homepage = "https://github.com/alesanfra/iterframes"
 repository = "https://github.com/alesanfra/iterframes"
-license = "LGPL-3.0-only"
+license = "Apache-2.0"
 publish = false
 
 [lib]

@@ -1,0 +1,19 @@
+iterframes
+Copyright 2020 Alessio Sanfratello
+
+This product is licensed under the Apache License, Version 2.0, found in
+the LICENSE file.
+
+The wheels also include software by third parties, under their own
+licenses, whose texts are in the licenses directory:
+
+- FFmpeg 9.0.2 (https://ffmpeg.org/), under the GNU Lesser General
+  Public License, version 2.1 or later: licenses/FFmpeg-LGPL-2.1.txt.
+  It is built without its GPL and nonfree parts. Its source and the
+  script that builds it, scripts/build-ffmpeg.sh, are available, so that
+  it can be modified, rebuilt, and relinked.
+- dav1d 1.5.4 (https://code.videolan.org/videolan/dav1d), under the BSD
+  2-clause license: licenses/dav1d-BSD-2-Clause.txt.
+- nv-codec-headers 13.0.19.0 (https://github.com/FFmpeg/nv-codec-headers),
+  in the Linux and Windows wheels only, under the MIT license:
+  licenses/nv-codec-headers-MIT.txt.
