@@ -14,7 +14,8 @@ While `model` runs on one frame, FFmpeg decodes the next ones on a
 background thread, written in Rust with [PyO3](https://pyo3.rs/). The
 thread never takes the GIL, so it keeps decoding even while your code
 holds it, and decoding overlaps with your work instead of adding to it.
-The frames reach NumPy without a copy.
+The frames reach NumPy without a copy, through the
+[buffer protocol](guides.md#frames-without-a-copy).
 
 ## Installation
 
@@ -57,17 +58,19 @@ for batch in iterframes.read_batches("video.mp4", 12, height=224, width=224):
     assert batch.shape[1:] == (224, 224, 3)
 ```
 
-Read frames at given positions, without decoding the whole video:
+Read frames by number, in any order, without decoding the whole video:
 
 ```python
-clip = list(iterframes.read("video.mp4", frames=[0, 30, 60]))
+clip = list(iterframes.read("video.mp4", frames=[120, 0, 60]))
+last = next(iterframes.read("video.mp4", frames=[-1]))
 every_fifth = iterframes.read("video.mp4", start=100, stop=200, step=5)
 ```
 
-Or, when a frame nearby will do, read the nearest key frame to each of
-them and skip the decoding in between:
+When a frame nearby will do, `approximate` reads the nearest key frame
+instead, which skips the decoding in between:
 
 ```python
+# The nearest key frame within 5 frames, else the frame itself.
 clip = list(iterframes.read("video.mp4", frames=[0, 30, 60], approximate=5))
 ```
 
@@ -79,8 +82,31 @@ for index, frame in enumerate(iterframes.read("video.mp4")):
         break
 ```
 
-The [reference](reference.md) describes every argument and the errors
-raised.
+Errors, such as a missing file, are raised by the first `next()`, not by
+`read`, because decoding starts only then.
+
+Decode on a GPU when the machine has one, else on the CPU:
+
+```python
+for frame in iterframes.read("video.mp4", device="auto"):
+    ...
+```
+
+Read several videos in parallel, one thread each; waiting for a frame
+releases the GIL:
+
+```python
+from concurrent.futures import ThreadPoolExecutor
+
+def count_frames(path):
+    return sum(1 for _ in iterframes.read(path))
+
+with ThreadPoolExecutor() as pool:
+    counts = list(pool.map(count_frames, paths))
+```
+
+The [guides](guides.md) explain random access, hardware decoding, and
+frames on the GPU; the [API](api.md) lists every argument and error.
 
 ## Formats
 
@@ -90,4 +116,4 @@ MPEG-4, ProRes, and MJPEG. AV1 is decoded by
 [dav1d](https://code.videolan.org/videolan/dav1d). Only local files are
 read: network protocols are left out of the build. Decoding runs on the
 CPU unless you ask for a hardware device; see
-[Hardware decoding](reference.md#hardware-decoding).
+[Hardware decoding](guides.md#hardware-decoding).

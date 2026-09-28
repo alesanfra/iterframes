@@ -52,9 +52,13 @@ markdown_extensions:
 plugins:
   - search
 
+hooks:
+  - scripts/docs_redirects.py
+
 nav:
   - Home: index.md
-  - Reference: reference.md
+  - Guides: guides.md
+  - API: api.md
   - Development: development.md
 
 extra:
