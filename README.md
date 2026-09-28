@@ -182,6 +182,7 @@ lists features that are waiting for someone to build them.
 iterframes is released under the [Apache License 2.0](https://github.com/alesanfra/iterframes/blob/main/LICENSE).
 The wheels include [FFmpeg](https://ffmpeg.org/), built under the LGPL, and
 [dav1d](https://code.videolan.org/videolan/dav1d), under the BSD 2-clause
-license. Their license texts are in
-[`NOTICE`](https://github.com/alesanfra/iterframes/blob/main/NOTICE) and
+license. They are listed in
+[`NOTICE`](https://github.com/alesanfra/iterframes/blob/main/NOTICE), with
+their license texts in
 [`licenses/`](https://github.com/alesanfra/iterframes/tree/main/licenses).
