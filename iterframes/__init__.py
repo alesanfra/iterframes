@@ -5,7 +5,7 @@ so the next ones are decoded while your code processes the current one.
 """
 
 import os
-from typing import Iterator, Optional, Sequence, Union
+from typing import Iterator, Literal, Optional, Sequence, Union
 
 import numpy as np
 
@@ -25,8 +25,10 @@ __all__ = [
     "Batch",
     "FFMPEG_VERSION",
     "CudaFrame",
+    "Device",
     "Frame",
     "FrameReader",
+    "Interpolation",
     "Plane",
     "__version__",
     "read",
@@ -34,6 +36,9 @@ __all__ = [
 ]
 
 PathLike = Union[str, "os.PathLike[str]"]
+# Checked again in src/lib.rs, which has the final say.
+Device = Literal["cpu", "mps", "cuda", "auto"]
+Interpolation = Literal["nearest", "bilinear", "bicubic", "area", "lanczos"]
 
 
 def read(
@@ -41,14 +46,14 @@ def read(
     height: Optional[int] = None,
     width: Optional[int] = None,
     prefetch_frames: int = 1,
-    device: str = "cpu",
+    device: Device = "cpu",
     on_device: bool = False,
     frames: Optional[Sequence[int]] = None,
     start: int = 0,
     stop: Optional[int] = None,
     step: int = 1,
     approximate: Union[bool, int, None] = None,
-    interpolation: Optional[str] = None,
+    interpolation: Optional[Interpolation] = None,
 ) -> Iterator[Union[np.ndarray, CudaFrame]]:
     """Yield the frames of the video at ``path``, in order.
 
@@ -127,14 +132,14 @@ def read_batches(
     height: Optional[int] = None,
     width: Optional[int] = None,
     prefetch_frames: int = 1,
-    device: str = "cpu",
+    device: Device = "cpu",
     drop_last: bool = False,
     frames: Optional[Sequence[int]] = None,
     start: int = 0,
     stop: Optional[int] = None,
     step: int = 1,
     approximate: Union[bool, int, None] = None,
-    interpolation: Optional[str] = None,
+    interpolation: Optional[Interpolation] = None,
 ) -> Iterator[np.ndarray]:
     """Yield the frames of the video at ``path`` in batches, in order.
 

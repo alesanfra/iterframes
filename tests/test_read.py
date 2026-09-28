@@ -1,4 +1,5 @@
 import threading
+from typing import get_args
 
 import numpy as np
 import pytest
@@ -111,6 +112,15 @@ def test_batches_interpolation(video_path):
 def test_unknown_interpolation(video_path):
     with pytest.raises(ValueError, match="interpolation"):
         next(iterframes.read(video_path, interpolation="cubic"))
+
+
+def test_interpolation_literal(video_path):
+    # The type hint lists the names the extension accepts, in its order.
+    with pytest.raises(ValueError, match="use one of") as error:
+        next(iterframes.read(video_path, interpolation="cubic"))
+
+    names = str(error.value).split("use one of ")[1].split(", ")
+    assert names == list(get_args(iterframes.Interpolation))
 
 
 def test_interpolation_not_on_device(video_path):
@@ -308,7 +318,17 @@ def test_batches_not_on_device(video_path):
 
 def test_devices():
     assert iterframes.DEVICES[0] == "cpu"
-    assert set(iterframes.DEVICES) <= {"cpu", "mps", "cuda"}
+    names = set(get_args(iterframes.Device)) - {"auto"}
+    assert set(iterframes.DEVICES) <= names
+
+
+@pytest.mark.parametrize("device", get_args(iterframes.Device))
+def test_device_literal(video_path, device):
+    # Every name in the type hint is known, though not every platform has it.
+    try:
+        next(iterframes.read(video_path, device=device))
+    except ValueError as error:
+        assert "is not available" in str(error)
 
 
 def test_unknown_device(video_path):

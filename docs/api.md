@@ -137,3 +137,15 @@ it.
 | `__version__` | Version of iterframes, such as `"0.4.0"` |
 | `FFMPEG_VERSION` | Version of the FFmpeg that iterframes is linked to, such as `"9.0.2"` |
 | `DEVICES` | Names accepted by `device` besides `"auto"`, such as `("cpu", "mps")` |
+
+## Types
+
+For type checkers, `iterframes.Device` and `iterframes.Interpolation` are
+the `Literal` types of `device` and `interpolation`:
+
+```python
+Device = Literal["cpu", "mps", "cuda", "auto"]
+Interpolation = Literal["nearest", "bilinear", "bicubic", "area", "lanczos"]
+```
+
+`Device` lists every name, while `DEVICES` lists those this platform has.
