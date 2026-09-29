@@ -1,4 +1,5 @@
 import threading
+from typing import get_args
 
 import numpy as np
 import pytest
@@ -41,6 +42,97 @@ def test_resize(video_path, height, width, decode_with_pyav, assert_close):
     assert len(frames) == len(expected)
     for frame, reference in zip(frames, expected):
         assert_close(frame, reference)
+
+
+@pytest.mark.parametrize(
+    "interpolation, pyav",
+    [
+        ("nearest", "POINT"),
+        ("bilinear", "BILINEAR"),
+        ("bicubic", "BICUBIC"),
+        ("area", "AREA"),
+        ("lanczos", "LANCZOS"),
+    ],
+)
+def test_interpolation(
+    video_path, interpolation, pyav, decode_with_pyav, assert_close
+):
+    expected = decode_with_pyav(video_path, 135, 240, pyav)
+
+    frames = list(
+        iterframes.read(
+            video_path, height=135, width=240, interpolation=interpolation
+        )
+    )
+
+    assert len(frames) == len(expected)
+    for frame, reference in zip(frames, expected):
+        assert_close(frame, reference)
+
+
+def test_interpolations_differ(video_path):
+    def frame(interpolation):
+        return next(
+            iterframes.read(
+                video_path,
+                frames=[450],
+                height=135,
+                width=240,
+                interpolation=interpolation,
+            )
+        )
+
+    assert not np.array_equal(frame("nearest"), frame("lanczos"))
+
+
+def test_interpolation_default_is_bilinear(video_path):
+    default = next(iterframes.read(video_path, height=135, width=240))
+    bilinear = next(
+        iterframes.read(
+            video_path, height=135, width=240, interpolation="bilinear"
+        )
+    )
+
+    np.testing.assert_array_equal(default, bilinear)
+
+
+def test_batches_interpolation(video_path):
+    frame = next(
+        iterframes.read(video_path, height=64, width=64, interpolation="area")
+    )
+    batch = next(
+        iterframes.read_batches(
+            video_path, 4, height=64, width=64, interpolation="area"
+        )
+    )
+
+    np.testing.assert_array_equal(batch[0], frame)
+
+
+def test_unknown_interpolation(video_path):
+    with pytest.raises(ValueError, match="interpolation"):
+        next(iterframes.read(video_path, interpolation="cubic"))
+
+
+def test_interpolation_literal(video_path):
+    # The type hint lists the names the extension accepts, in its order.
+    with pytest.raises(ValueError, match="use one of") as error:
+        next(iterframes.read(video_path, interpolation="cubic"))
+
+    names = str(error.value).split("use one of ")[1].split(", ")
+    assert names == list(get_args(iterframes.Interpolation))
+
+
+def test_interpolation_not_on_device(video_path):
+    with pytest.raises(ValueError, match="on_device"):
+        next(
+            iterframes.read(
+                video_path,
+                device="cuda",
+                on_device=True,
+                interpolation="bilinear",
+            )
+        )
 
 
 def test_resize_one_side_keeps_the_other(video_path):
@@ -226,7 +318,19 @@ def test_batches_not_on_device(video_path):
 
 def test_devices():
     assert iterframes.DEVICES[0] == "cpu"
-    assert set(iterframes.DEVICES) <= {"cpu", "mps", "cuda"}
+    names = set(get_args(iterframes.Device)) - {"auto"}
+    assert set(iterframes.DEVICES) <= names
+
+
+@pytest.mark.parametrize("device", get_args(iterframes.Device))
+def test_device_literal(video_path, device):
+    # Every name in the type hint is known, though not every platform has it.
+    try:
+        next(iterframes.read(video_path, device=device))
+    except RuntimeError:
+        pass  # Built in, but this machine has no such device.
+    except ValueError as error:
+        assert "is not available" in str(error)
 
 
 def test_unknown_device(video_path):

@@ -5,7 +5,7 @@ so the next ones are decoded while your code processes the current one.
 """
 
 import os
-from typing import Iterator, Optional, Sequence, Union
+from typing import Iterator, Literal, Optional, Sequence, Union
 
 import numpy as np
 
@@ -25,8 +25,10 @@ __all__ = [
     "Batch",
     "FFMPEG_VERSION",
     "CudaFrame",
+    "Device",
     "Frame",
     "FrameReader",
+    "Interpolation",
     "Plane",
     "__version__",
     "read",
@@ -34,6 +36,9 @@ __all__ = [
 ]
 
 PathLike = Union[str, "os.PathLike[str]"]
+# Checked again in src/lib.rs, which has the final say.
+Device = Literal["cpu", "mps", "cuda", "auto"]
+Interpolation = Literal["nearest", "bilinear", "bicubic", "area", "lanczos"]
 
 
 def read(
@@ -41,13 +46,14 @@ def read(
     height: Optional[int] = None,
     width: Optional[int] = None,
     prefetch_frames: int = 1,
-    device: str = "cpu",
+    device: Device = "cpu",
     on_device: bool = False,
     frames: Optional[Sequence[int]] = None,
     start: int = 0,
     stop: Optional[int] = None,
     step: int = 1,
     approximate: Union[bool, int, None] = None,
+    interpolation: Optional[Interpolation] = None,
 ) -> Iterator[Union[np.ndarray, CudaFrame]]:
     """Yield the frames of the video at ``path``, in order.
 
@@ -91,6 +97,12 @@ def read(
     it by any distance. The video still has to be indexed, so the packets
     are read either way. Two frames near the same key frame are then the
     same frame, and are decoded once each.
+
+    ``interpolation`` is how frames are resized: ``"nearest"``,
+    ``"bilinear"``, ``"bicubic"``, ``"area"``, or ``"lanczos"``. By
+    default the CPU resizes bilinearly, and ``device="cuda"`` resizes on
+    the GPU with NVIDIA's own method; naming one resizes on the CPU, even
+    after decoding on a GPU.
     """
     reader = FrameReader(
         path,
@@ -104,6 +116,7 @@ def read(
         stop=stop,
         step=step,
         approximate=approximate,
+        interpolation=interpolation,
     )
     if on_device:
         yield from reader
@@ -119,13 +132,14 @@ def read_batches(
     height: Optional[int] = None,
     width: Optional[int] = None,
     prefetch_frames: int = 1,
-    device: str = "cpu",
+    device: Device = "cpu",
     drop_last: bool = False,
     frames: Optional[Sequence[int]] = None,
     start: int = 0,
     stop: Optional[int] = None,
     step: int = 1,
     approximate: Union[bool, int, None] = None,
+    interpolation: Optional[Interpolation] = None,
 ) -> Iterator[np.ndarray]:
     """Yield the frames of the video at ``path`` in batches, in order.
 
@@ -138,7 +152,8 @@ def read_batches(
     Takes the same arguments as :func:`read`, except ``on_device``, so
     ``frames``, or ``start``, ``stop``, and ``step``, batch the frames
     with those numbers instead of the whole video, and ``approximate``
-    batches the key frames nearest to ``frames``. The background thread
+    batches the key frames nearest to ``frames``. ``interpolation`` is how
+    frames are resized, as in :func:`read`. The background thread
     decodes up to ``prefetch_frames`` frames ahead, rounded up to whole
     batches.
     """
@@ -157,6 +172,7 @@ def read_batches(
         stop=stop,
         step=step,
         approximate=approximate,
+        interpolation=interpolation,
     )
     # The arrays share memory with the batches, which they keep alive.
     for batch in reader:

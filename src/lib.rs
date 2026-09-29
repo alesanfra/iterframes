@@ -13,6 +13,7 @@ mod dlpack;
 mod ffmpeg;
 
 use decoder::{Batching, CUDA_FORMATS, Decoded, Device, Error, Message, Selection};
+use ffmpeg::Interpolation;
 
 impl From<Error> for PyErr {
     fn from(err: Error) -> PyErr {
@@ -346,7 +347,7 @@ impl FrameReader {
     #[pyo3(signature = (
         path, height=None, width=None, prefetch_frames=1, device="cpu", on_device=false,
         batch_size=None, drop_last=false, frames=None, start=0, stop=None, step=1,
-        approximate=None
+        approximate=None, interpolation=None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -363,8 +364,29 @@ impl FrameReader {
         stop: Option<isize>,
         step: isize,
         approximate: Option<&Bound<'_, PyAny>>,
+        interpolation: Option<&str>,
     ) -> PyResult<Self> {
         let selection = selection(frames, start, stop, step, approximate)?;
+        let interpolation = interpolation
+            .map(|name| {
+                Interpolation::ALL
+                    .into_iter()
+                    .find(|(known, _)| *known == name)
+                    .map(|(_, interpolation)| interpolation)
+                    .ok_or_else(|| {
+                        let names: Vec<_> = Interpolation::ALL.iter().map(|(n, _)| *n).collect();
+                        PyValueError::new_err(format!(
+                            "interpolation {name:?} is unknown; use one of {}",
+                            names.join(", ")
+                        ))
+                    })
+            })
+            .transpose()?;
+        if interpolation.is_some() && on_device {
+            return Err(PyValueError::new_err(
+                "interpolation does not work with on_device=True: the GPU resizes",
+            ));
+        }
         let batching = match batch_size {
             None => None,
             Some(0) => return Err(PyValueError::new_err("batch_size must be at least 1")),
@@ -406,6 +428,7 @@ impl FrameReader {
                 path,
                 height,
                 width,
+                interpolation,
                 device,
                 on_device,
                 batching,

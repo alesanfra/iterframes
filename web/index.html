@@ -182,11 +182,13 @@
       <h3>Resized while it decodes</h3>
       <p>
         Ask for a size and FFmpeg scales the frame on its way out, instead of a
-        <code>cv2.resize</code> in your loop.
+        <code>cv2.resize</code> in your loop: nearest, bilinear, bicubic, area,
+        or Lanczos.
       </p>
 <pre><code>iterframes.<span class="f">read</span>(video,
                  height=<span class="n">224</span>,
-                 width=<span class="n">224</span>)</code></pre>
+                 width=<span class="n">224</span>,
+                 interpolation=<span class="s">"area"</span>)</code></pre>
     </article>
 
     <article class="card">

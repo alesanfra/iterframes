@@ -30,6 +30,51 @@ What this changes for your code:
 Other libraries can read a `Frame` without NumPy; see
 [`Frame`](api.md#frame).
 
+## Resizing
+
+`height` and `width` resize each frame while swscale converts it to RGB,
+so the full-size RGB frame is never made. `interpolation` picks the
+method:
+
+```python
+frames = iterframes.read("video.mp4", height=224, width=224, interpolation="area")
+```
+
+| `interpolation` | Method | For |
+| --- | --- | --- |
+| `"nearest"` | The nearest pixel | Masks and labels, whose values must not blend. Fastest, but aliases |
+| `"bilinear"` | Bilinear, the default | Most models |
+| `"bicubic"` | Bicubic | Sharper edges than bilinear |
+| `"area"` | Mean of the pixels each one covers | Shrinking |
+| `"lanczos"` | Lanczos | The sharpest, and the slowest |
+
+When they shrink a frame, `"bilinear"`, `"bicubic"`, and `"lanczos"`
+widen their filter to cover every pixel of the source, as Pillow's
+filters do, rather than blending only the nearest few. On a zone plate
+shrunk from 1080p to 224x224, they land within 2.5 levels out of 255,
+on average, of Pillow's filters of the same name.
+
+On an Apple M2, a 1080p H.264 video of 300 frames and a 270p one of 901
+frames, decoded and resized, best of five runs:
+
+| `interpolation` | 1080p to 224x224 | 270p to 1080p |
+| --- | --- | --- |
+| None, no resizing | 0.171 s | 0.049 s |
+| `"nearest"` | 0.146 s | 0.617 s |
+| `"bilinear"` | 0.173 s | 0.786 s |
+| `"bicubic"` | 0.202 s | 1.592 s |
+| `"area"` | 0.163 s | 0.785 s |
+| `"lanczos"` | 0.237 s | 2.152 s |
+
+Shrinking costs little: converting a smaller frame to RGB saves about what
+resizing it costs. Enlarging makes every frame that much bigger to
+convert, and the method matters more.
+
+With `device="cuda"` and no `interpolation`, the GPU resizes with
+NVIDIA's own method, and only frames of the final size are copied to
+memory. Naming an `interpolation` makes the CPU resize instead, from
+frames copied at full size. It does not work with `on_device=True`.
+
 ## Reading frames by number
 
 `frames` reads the frames with those numbers, in the order given, instead
@@ -137,7 +182,7 @@ for frame in iterframes.read("video.mp4", device="auto"):
   way. AV1 always is, by dav1d.
 - With `"cuda"`, the GPU also does the resizing to `height` and `width`,
   so that only frames of the final size are copied to memory. Its
-  interpolation differs slightly from the CPU's.
+  interpolation differs slightly from the CPU's; see [Resizing](#resizing).
 
 A device is not always faster. On Apple silicon, VideoToolbox decodes one
 frame at a time: in our tests on 1080p H.264 and 4K HEVC it used 40% to

@@ -23,11 +23,14 @@ def av1_video_path():
 def decode_with_pyav():
     """A factory for reference frames, decoded and converted by PyAV."""
 
-    def decode(path, height=None, width=None):
+    def decode(path, height=None, width=None, interpolation=None):
         with av.open(str(path)) as container:
             return [
                 frame.reformat(
-                    width=width, height=height, format="rgb24"
+                    width=width,
+                    height=height,
+                    format="rgb24",
+                    interpolation=interpolation,
                 ).to_ndarray()
                 for frame in container.decode(video=0)
             ]

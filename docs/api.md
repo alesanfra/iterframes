@@ -5,7 +5,7 @@ Everything lives in the top-level `iterframes` module.
 ## read
 
 ```python
-read(path, height=None, width=None, prefetch_frames=1, device="cpu", on_device=False, frames=None, start=0, stop=None, step=1, approximate=None) -> Iterator[numpy.ndarray]
+read(path, height=None, width=None, prefetch_frames=1, device="cpu", on_device=False, frames=None, start=0, stop=None, step=1, approximate=None, interpolation=None) -> Iterator[numpy.ndarray]
 ```
 
 Yields the frames of the video at `path`, in order, or with `frames`, or
@@ -24,8 +24,10 @@ Each frame is a C-contiguous, writable `numpy.ndarray` of shape
 | `frames` | The numbers of the frames to read, in the order to read them. See [Reading frames by number](guides.md#reading-frames-by-number) |
 | `start`, `stop`, `step` | The frames to read, as a slice of the video |
 | `approximate` | With `frames`, read the key frame nearest to each of them instead, when it is within this many frames. `True` is any distance. See [Approximate frames](guides.md#approximate-frames) |
+| `interpolation` | How frames are resized: `"nearest"`, `"bilinear"`, `"bicubic"`, `"area"`, or `"lanczos"`. Defaults to bilinear on the CPU. See [Resizing](guides.md#resizing) |
 
-Frames are resized with bilinear interpolation. When only one of `height`
+Frames are resized with bilinear interpolation, unless `interpolation`
+says otherwise. When only one of `height`
 and `width` is given, the other keeps the size of the video, so the aspect
 ratio changes.
 
@@ -49,7 +51,7 @@ for frame in iterframes.read("video.mp4", height=270, width=480):
 ## read_batches
 
 ```python
-read_batches(path, batch_size, height=None, width=None, prefetch_frames=1, device="cpu", drop_last=False, frames=None, start=0, stop=None, step=1, approximate=None) -> Iterator[numpy.ndarray]
+read_batches(path, batch_size, height=None, width=None, prefetch_frames=1, device="cpu", drop_last=False, frames=None, start=0, stop=None, step=1, approximate=None, interpolation=None) -> Iterator[numpy.ndarray]
 ```
 
 Yields the frames of the video in batches, in order, for models that take
@@ -95,7 +97,7 @@ except FileNotFoundError as error:
 ## FrameReader
 
 ```python
-FrameReader(path, height=None, width=None, prefetch_frames=1, device="cpu", on_device=False, batch_size=None, drop_last=False, frames=None, start=0, stop=None, step=1, approximate=None)
+FrameReader(path, height=None, width=None, prefetch_frames=1, device="cpu", on_device=False, batch_size=None, drop_last=False, frames=None, start=0, stop=None, step=1, approximate=None, interpolation=None)
 ```
 
 The iterator behind `read` and `read_batches`. It yields `Frame` objects,
@@ -135,3 +137,15 @@ it.
 | `__version__` | Version of iterframes, such as `"0.4.0"` |
 | `FFMPEG_VERSION` | Version of the FFmpeg that iterframes is linked to, such as `"9.0.2"` |
 | `DEVICES` | Names accepted by `device` besides `"auto"`, such as `("cpu", "mps")` |
+
+## Types
+
+For type checkers, `iterframes.Device` and `iterframes.Interpolation` are
+the `Literal` types of `device` and `interpolation`:
+
+```python
+Device = Literal["cpu", "mps", "cuda", "auto"]
+Interpolation = Literal["nearest", "bilinear", "bicubic", "area", "lanczos"]
+```
+
+`Device` lists every name, while `DEVICES` lists those this platform has.
