@@ -6,6 +6,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 From 0.4.0 on, [release-please](https://github.com/googleapis/release-please)
 writes each entry from the Conventional Commits since the previous release.
 
+## [0.7.0](https://github.com/alesanfra/iterframes/compare/v0.6.0...v0.7.0) (2026-09-29)
+
+
+### Features
+
+* choose how frames are resized with interpolation ([#15](https://github.com/alesanfra/iterframes/issues/15)) ([6317322](https://github.com/alesanfra/iterframes/commit/63173220228303d0ca508e00037260ffe272b69c))
+
 ## [0.6.0](https://github.com/alesanfra/iterframes/compare/v0.5.0...v0.6.0) (2026-09-20)
 
 
